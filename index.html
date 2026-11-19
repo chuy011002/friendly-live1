@@ -460,12 +460,19 @@ async function cargarAmigos(){
   snapSeg.forEach(function(c){ html2 += '<div class="friend"><b>'+c.key+'</b></div>'; });
   document.getElementById('listaSeguidores').innerHTML = html2 || '<p style="color:#aaa">Nadie te sigue aun</p>';
 }
-function idChatCon(otroUid){ var miUid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:''); return [miUid, otroUid].sort().join('_'); }
-async function abrirChat(otroUid, apodoOtro){
-  chatActualOtroUid=otroUid; chatActualOtroApodo=apodoOtro||''; chatActualId=idChatCon(otroUid);
-  if(!apodoOtro){ var snap=await dbFirebase.ref('usuarios/'+otroUid).once('value'); var u=snap.val()||{}; chatActualOtroApodo=u.apodo||''; }
-  document.getElementById('nombreChat').textContent=chatActualOtroApodo||'Chat'; document.getElementById('apodoChat').textContent='@'+chatActualOtroApodo;
-  document.querySelectorAll('.pantalla').forEach(function(p){p.classList.remove('show')}); document.getElementById('pantallaChat').classList.add('show'); escucharChat();
+function idChatCon(otroUid){
+  var miUid = localStorage.getItem('miUid') || (authFirebase.currentUser ? authFirebase.currentUser.uid : '');
+  var a = String(miUid || '').toLowerCase();
+  var b = String(otroUid || '').toLowerCase();
+  if(!a || !b) return '';
+  return a < b ? a + '_' + b : b + '_' + a;
+}
+async function abrirchat(otroUid, apodoOtro){
+  chatActualOtroUid = otroUid; chatActualOtroApodo = apodoOtro || ''; chatActualId = idChatCon(otroUid);
+  if(!apodoOtro){ var snap = await dbFirebase.ref('usuarios/' + otroUid).once('value'); var u = snap.val() || {}; chatActualOtroApodo = u.apodo || ''; }
+  document.getElementById('nombreChat').textContent = chatActualOtroApodo || 'Chat'; document.getElementById('apodoChat').textContent = '@' + chatActualOtroApodo;
+  document.querySelectorAll('.pantalla').forEach(function(p){ p.classList.remove('show') }); document.getElementById('pantallaChat').classList.add('show');
+  escucharChat();
 }
 function escucharChat(){
   if(!chatActualId) return;
