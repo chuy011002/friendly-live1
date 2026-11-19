@@ -443,7 +443,7 @@ authFirebase.onAuthStateChanged(async function(user) {
   }
 });
 </script>
-  <scipt>
+  <script>
 async function cargarPerfil() {
   var uid = localStorage.getItem('miUid') || (authFirebase.currentUser ? authFirebase.currentUser.uid : '');
   if (!uid) return;
