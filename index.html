@@ -21,8 +21,8 @@ function uidAgora(apodo){
 }
 function obtenerCanal(apodo){ return 'live_'+limpiarApodo(apodo||localStorage.getItem('apodo')||'general'); }
 function obtenerCanalDe(apodo){ return 'live_'+limpiarApodo(apodo); }
-function canalLlamada(chatId){ return 'call_'+(chatId||'general').replace(/[^a-zA-Z0-9_]/g,'').toLowerCase(); }
-async function obtenerToken(canal, uid){
+function canalLlamada(chatId){ var s = String(chatId || 'general'); var h = 0; for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; } return 'call_' + (h % 100000000); }
+  async function obtenerToken(canal, uid){
   var r = await fetch('/api/token?channel='+encodeURIComponent(canal)+'&uid='+uid);
   var d = await r.json();
   if(!d.token) throw new Error('No se pudo generar token');
@@ -394,10 +394,29 @@ async function seguirUsuario(uidOtro, apodoOtro){
   var miUid=localStorage.getItem('miUid'); if(!miUid) return alert('Entra primero');
   await dbFirebase.ref('seguidores/'+uidOtro+'/'+miUid).set(true); await dbFirebase.ref('seguidos/'+miUid+'/'+uidOtro).set(true); alert('Ahora sigues a @'+apodoOtro);
 }
-async function cargarLivesDemo(){
-  var snap=await dbFirebase.ref('lives').once('value'); var html='';
-  snap.forEach(function(c){ var l=c.val(); if(l&&l.activo){ html+='<div class="card"><b>🔴 Live de @'+escaparHTML(l.apodo||'')+'</b><p style="color:#aaa;font-size:13px">Canal: '+escaparHTML(l.canal||'')+'</p><button class="btn-rojo" onclick="verLiveDe(\''+escaparHTML(l.apodo||'')+'\')">Ver live</button></div>'; } });
-  document.getElementById('listaLives').innerHTML=html||'<p style="color:#aaa">Nadie en vivo ahora</p>';
+function cargarLivesDemo(){
+  dbFirebase.ref('lives').off();
+  dbFirebase.ref('lives').on('value', function(snap){
+    var html = '';
+    var hayAlguien = false;
+    snap.forEach(function(c){
+      var l = c.val();
+      if(l && l.activo){
+        hayAlguien = true;
+        html += '<div class="card"><b>🔴 Live de @' + escaparHTML(l.apodo || '') + '</b><p style="color:#aaa;font-size:13px">Canal: ' + escaparHTML(l.canal || '') + '</p><button class="btn-rojo" onclick="verLiveDe(\'' + escaparHTML(l.apodo || '') + '\')">Ver live</button></div>';
+      }
+    });
+    document.getElementById('listaLives').innerHTML = html || '<p style="color:#aaa">Nadie en vivo ahora. Se el primero en transmitir!</p>';
+    var banner = document.getElementById('bannerLiveInicio');
+    if(banner){
+      var htmlBanner = '';
+      snap.forEach(function(c){
+        var l = c.val();
+        if(l && l.activo) htmlBanner += '<div class="bannerLive"><span>🔴 @' + escaparHTML(l.apodo) + ' en vivo</span><button onclick="verLiveDe(\'' + escaparHTML(l.apodo) + '\')">Ver</button></div>';
+      });
+      banner.innerHTML = htmlBanner;
+    }
+  });
 }
 async function buscarAmigo(){
   var q=limpiarBusqueda(document.getElementById('inputBuscarAmigo').value.trim()); if(!q) return;
@@ -409,13 +428,37 @@ async function buscarAmigo(){
   }catch(e){ document.getElementById('buscarAmigoResultados').innerHTML='<p style="color:#ff3b5c">Error Firebase: '+e.message+'</p>'; }
 }
 async function cargarAmigos(){
-  var miUid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:''); if(!miUid) return;
-  var snap=await dbFirebase.ref('chats').once('value'); var html='';
-  snap.forEach(function(c){ var id=c.key; var partes=id.split('_'); if(partes.includes(miUid)){ var otroUid=partes[0]===miUid?partes[1]:partes[0]; html+='<div class="friend" onclick="abrirChat(\''+otroUid+'\',\'\')"><div style="width:44px;height:44px;border-radius:50%;background:#444;display:flex;align-items:center;justify-content:center">👤</div><div><b>Chat</b><div style="font-size:12px;color:#aaa">'+id+'</div></div><button class="btn-gris" style="width:auto">Abrir</button></div>'; } });
-  document.getElementById('listaAmigos').innerHTML=html||''; document.getElementById('sinAmigos').style.display=html?'none':'block';
-  var snapSeg=await dbFirebase.ref('seguidores/'+miUid).once('value'); var html2='';
-  snapSeg.forEach(function(c){ html2+='<div class="friend"><b>'+c.key+'</b></div>'; });
-  document.getElementById('listaSeguidores').innerHTML=html2||'<p style="color:#aaa">Nadie te sigue aun</p>';
+  var user = authFirebase.currentUser;
+  var miUid = user ? user.uid : localStorage.getItem('miUid');
+  if(!miUid) return;
+  // Guardamos el bueno para que no se vuelva a perder
+  localStorage.setItem('miUid', miUid);
+  try{
+    var snap = await dbFirebase.ref('chats').once('value');
+    var html = '';
+    var promesas = [];
+    snap.forEach(function(c){
+      var id = c.key;
+      if(!id.includes(miUid)) return;
+      var partes = id.split('_');
+      var otroUid = partes[0] === miUid ? partes[1] : partes[0];
+      promesas.push(
+        dbFirebase.ref('usuarios/'+otroUid).once('value').then(function(snapU){
+          var u = snapU.val() || {};
+          var apodoOtro = u.apodo || 'Usuario';
+          html += '<div class="friend" onclick="abrirChat(\''+otroUid+'\',\''+escaparHTML(apodoOtro)+'\')"><div style="width:44px;height:44px;border-radius:50%;background:#444;display:flex;align-items:center;justify-content:center">👤</div><div><b>@'+escaparHTML(apodoOtro)+'</b><div style="font-size:12px;color:#aaa">Toca para abrir chat</div></div><button class="btn-gris" style="width:auto">Abrir</button></div>';
+        })
+      );
+    });
+    await Promise.all(promesas);
+    document.getElementById('listaAmigos').innerHTML = html;
+    document.getElementById('sinAmigos').style.display = html ? 'none' : 'block';
+  }catch(e){ console.log(e); }
+  // Seguidores igual que antes
+  var snapSeg = await dbFirebase.ref('seguidores/'+miUid).once('value');
+  var html2 = '';
+  snapSeg.forEach(function(c){ html2 += '<div class="friend"><b>'+c.key+'</b></div>'; });
+  document.getElementById('listaSeguidores').innerHTML = html2 || '<p style="color:#aaa">Nadie te sigue aun</p>';
 }
 function idChatCon(otroUid){ var miUid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:''); return [miUid, otroUid].sort().join('_'); }
 async function abrirChat(otroUid, apodoOtro){
