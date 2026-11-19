@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Friendly Live - En Vivo</title>
+<script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.20.0.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig={apiKey:"AIzaSyDxs7Vtej-PN9kaFJBOwd7yE7TZjS1i8xI",authDomain:"friendly-live-2a3e4.firebaseapp.com",databaseURL:"https://friendly-live-2a3e4-default-rtdb.firebaseio.com",projectId:"friendly-live-2a3e4",storageBucket:"friendly-live-2a3e4.firebasestorage.app",messagingSenderId:"730552611150",appId:"1:730552611150:web:ab3d8d62069e766fb66e1f",measurementId:"G-LP98997GWN"};
+firebase.initializeApp(firebaseConfig);
+var authFirebase=firebase.auth();
+var dbFirebase=firebase.database();
+var APP_ID_AGORA="98c829d949744dae8cf887fdb05ff7bb";
+function uidAgora(apodo){
+  var s=(apodo||localStorage.getItem('apodo')||'user1').toLowerCase();
+  var h=0; for(var i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))>>>0; }
+  return 1000 + (h % 900000);
+}
+function obtenerCanal(apodo){ return 'live_'+limpiarApodo(apodo||localStorage.getItem('apodo')||'general'); }
+function obtenerCanalDe(apodo){ return 'live_'+limpiarApodo(apodo); }
+function canalLlamada(chatId){ return 'call_'+(chatId||'general').replace(/[^a-zA-Z0-9_]/g,'').toLowerCase(); }
+async function obtenerToken(canal, uid){
+  var r = await fetch('/api/token?channel='+encodeURIComponent(canal)+'&uid='+uid);
+  var d = await r.json();
+  if(!d.token) throw new Error('No se pudo generar token');
+  return d.token;
+}
+function limpiarApodo(s){return (s||'').replace(/[^a-zA-Z0-9_]/g,'').toLowerCase();}
+function escaparHTML(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function limpiarBusqueda(s){ return (s||'').toLowerCase().replace(/^@/,'').replace(/\s+/g,''); }
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}
+body{background:#0f0f12;color:#fff}
+a{color:#ff3b5c}
+button{cursor:pointer;border:none;border-radius:10px;padding:10px 14px;font-weight:bold;position:relative;z-index:2}
+input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #333;background:#1c1c22;color:#fff;margin:6px 0}
+textarea{resize:vertical;min-height:70px}
+.topnav{display:none;background:#15151b;padding:10px;position:sticky;top:0;z-index:10;justify-content:space-between;gap:6px}
+.topnav.show{display:flex}.topnav button{background:#222;color:#fff;flex:1;font-size:13px}.topnav button.activo{background:#ff3b5c}
+.pantalla{display:none;padding:14px;max-width:600px;margin:0 auto;padding-bottom:80px}.pantalla.show{display:block}
+.card{background:#1c1c22;border-radius:14px;padding:12px;margin:10px 0;position:relative;z-index:1}
+.btn-rojo{background:#ff3b5c;color:#fff;width:100%;padding:14px;font-size:16px}
+.btn-gris{background:#2a2a33;color:#fff}
+.btn-buscar{background:#ff3b5c;color:#fff;white-space:nowrap;width:auto}
+.btn-gift{width:38px!important;height:32px!important;font-size:18px!important;background:#FFD700!important;color:#000!important;border-radius:10px!important;flex-shrink:0;padding:0!important}
+.buscar-row{display:flex;gap:8px;align-items:center}.buscar-row input{flex:1}
+.vivoWrap{position:relative}.videoBox{width:100%;height:520px;background:#000;border-radius:14px;overflow:hidden;position:relative}
+.videoGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;background:#000;height:auto;min-height:340px}
+.videoGrid .tile{position:relative;background:#222;border-radius:10px;overflow:hidden;height:250px;display:flex;align-items:center;justify-content:center}
+.videoGrid .tile video{width:100%;height:100%;object-fit:cover}
+.videoGrid .tile.solo{grid-column:span 2}
+.videoGrid .tile .nombre{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6);padding:4px 8px;border-radius:12px;font-size:12px;z-index:2}
+.videoGrid .tile .avatar{font-size:40px}
+.bannerLive{background:#e50914;border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.bannerLive button{background:#fff;color:#e50914;border:none;padding:8px 14px;border-radius:20px;font-weight:bold;white-space:nowrap}
+#listaComentarios{position:absolute;left:10px;right:10px;bottom:58px;height:33%;overflow-y:auto;background:transparent;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;pointer-events:none;z-index:5}
+.comentario{background:rgba(0,0,0,0.55);border-radius:20px;padding:6px 10px;width:fit-content;max-width:90%;font-size:14px}
+.cajaEscribir{position:absolute;left:10px;right:10px;bottom:10px;z-index:10;display:flex;gap:6px;align-items:center;background:rgba(0,0,0,.6);border-radius:999px;padding:4px 4px 4px 10px;height:38px}
+.cajaEscribir input{flex:1;margin:0;padding:0 6px;height:28px;background:transparent;border:none}
+.cajaEscribir .btn-rojo{width:auto!important;height:28px!important;padding:0 10px!important;font-size:12px!important;border-radius:999px!important}
+.cajaEscribir .btn-gris{width:32px!important;height:28px!important;padding:0!important;font-size:16px!important;border-radius:50%!important}
+.gift-panel{display:none;position:absolute;left:50%;transform:translateX(-50%);bottom:58px;width:92%;max-width:400px;background:#1c1c1c;border-radius:20px;padding:16px;z-index:40}
+.share-modal{display:none;position:fixed;bottom:90px;left:50%;transform:translateX(-50%);width:92%;max-width:400px;background:#1c1c1c;border-radius:20px;padding:16px;z-index:50}
+.gift-panel.show,.share-modal.show{display:block}
+.gift-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.gift-item{background:#2a2a2a;border-radius:14px;padding:12px 4px;text-align:center;cursor:pointer}
+.gift-item span{font-size:28px;display:block}
+.logo{font-size:28px;font-weight:900;text-align:center;margin:20px 0}.logo span{color:#ff3b5c}
+.sub{text-align:center;color:#aaa;font-size:14px;margin-bottom:14px}
+.stats{display:flex;justify-content:space-around;text-align:center;margin:10px 0}
+.stats b{display:block;font-size:18px}.stats span{font-size:12px;color:#aaa}
+.post-img{width:100%;border-radius:12px;margin-top:8px;max-height:380px;object-fit:cover}
+.friend{display:flex;align-items:center;gap:10px;background:#2a2a2a;padding:10px;border-radius:12px;margin:6px 0;cursor:pointer}
+.chat-box{height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:6px 0}
+.msg{max-width:80%;padding:8px 12px;border-radius:14px;background:#2a2a2a}.msg.mio{align-self:flex-end;background:#ff3b5c}.msg img{width:100%;border-radius:10px;margin-top:6px}
+.llamadaBox{display:none;background:#000;border-radius:14px;padding:10px;margin:10px 0;text-align:center}
+.llamadaBox.show{display:block}.llamadaBox video{width:100%;border-radius:10px;background:#222;min-height:200px}
+.tabs-login{display:flex;gap:8px;position:relative;z-index:5}.tabs-login button{flex:1}
+.foto-click{cursor:pointer}
+.modal-foto{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:16px}
+.modal-foto.show{display:flex}.modal-foto img{max-width:94vw;max-height:82vh;border-radius:16px;object-fit:contain;background:#111}.modal-foto .cerrar{margin-top:14px;background:#ff3b5c;color:#fff}
+.btn-borrar{background:#7a1a1a!important;color:#fff}
+.banner-noti{display:none;position:fixed;top:60px;left:12px;right:12px;background:#ff3b5c;color:#fff;padding:12px;border-radius:12px;z-index:9999;cursor:pointer;font-weight:bold}
+.modal-llamada{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;align-items:center;justify-content:center;flex-direction:column;padding:20px;text-align:center}
+.modal-llamada.show{display:flex}
+.modal-politica{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10001;padding:16px;overflow-y:auto}
+.modal-politica.show{display:block}
+</style>
+</head>
+<body>
+<div id="bannerNoti" class="banner-noti" onclick="irANotificacion()"></div>
+<div id="pantallaLogin" class="pantalla show">
+<div class="logo">FRIENDLY <span>LIVE</span></div>
+<div class="sub">Transmite, mira lives y chatea en vivo</div>
+<div class="card">
+<div class="tabs-login">
+<button type="button" id="btnTabCrear" class="btn-rojo" onclick="cambiarTab('crear')">Crear Cuenta</button>
+<button type="button" id="btnTabEntrar" class="btn-gris" onclick="cambiarTab('entrar')">Entrar</button>
+</div>
+<h3 id="tituloLogin" style="margin:12px 0 6px">Crear Cuenta</h3>
+<div id="camposCrear">
+<input id="inputNombre" placeholder="Tu nombre completo">
+<input id="inputApodo" placeholder="Tu apodo, ej: carlos12">
+<input id="inputCorreo" type="email" placeholder="Correo electronico">
+<input id="inputEdad" type="number" placeholder="Edad, ej: 22" min="18" max="100">
+<select id="inputPais"><option value="">Elige tu pais / nacionalidad</option><option value="MX">Mexico</option><option value="US">Estados Unidos</option><option value="CO">Colombia</option><option value="AR">Argentina</option><option value="ES">Espana</option><option value="OTRO">Otro</option></select>
+<input id="inputPass" type="password" placeholder="Contrasena - minimo 6 letras">
+<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;color:#ccc;margin:10px 0"><input id="checkTerminos" type="checkbox" style="width:18px;height:18px;margin:0"><span>Acepto la <a href="#" onclick="document.getElementById('modalPolitica').classList.add('show');return false">Politica de Privacidad</a>. Soy mayor de 18 anos.</span></label>
+<button type="button" class="btn-rojo" onclick="crearCuenta()">CREAR CUENTA EN FIREBASE</button>
+</div>
+<div id="camposEntrar" style="display:none">
+<input id="inputCorreoLogin" type="email" placeholder="Correo electronico">
+<input id="inputPassLogin" type="password" placeholder="Contrasena">
+<button type="button" class="btn-rojo" onclick="entrarCuenta()">ENTRAR CON FIREBASE</button>
+<button type="button" class="btn-gris" style="margin-top:8px" onclick="olvidarPass()">Olvidaste tu contrasena? Enviar codigo a mi correo</button>
+</div>
+</div>
+</div>
+<div id="modalPolitica" class="modal-politica"><div style="background:#1c1c22;border-radius:14px;padding:16px;max-width:500px;margin:20px auto"><h2>Politica de Privacidad - Friendly Live</h2><p style="font-size:13px;line-height:1.6;color:#ccc;margin:10px 0">1. Solo mayores de 18 anos. Guardamos nombre, apodo, correo, edad y pais solo para tu cuenta.<br>2. No desnudos, violencia, acoso ni contenido ilegal. Eres responsable de lo que transmites.<br>3. No compartimos tus datos con terceros. Puedes borrar tu cuenta y tus publicaciones desde Ajustes.<br>4. Al crear tu cuenta aceptas esta politica.</p><button type="button" class="btn-rojo" onclick="document.getElementById('modalPolitica').classList.remove('show')">Cerrar</button></div></div>
+<div id="topNav" class="topnav">
+<button type="button" id="btnNavInicio" onclick="mostrar('inicio')">Inicio</button>
+<button type="button" id="btnNavVivo" onclick="mostrar('vivo')">En Vivo</button>
+<button type="button" id="btnNavLives" onclick="mostrar('lives')">Lives</button>
+<button type="button" id="btnNavMensajes" onclick="mostrar('mensajes')">Mensajes</button>
+<button type="button" id="btnNavPerfil" onclick="mostrar('perfil')">Perfil</button>
+</div>
+<div id="pantallaInicio" class="pantalla">
+<h2>Inicio</h2>
+<div class="buscar-row"><input id="inputBuscar" placeholder="Buscar usuario, apodo o publicacion..." onkeydown="if(event.key==='Enter') buscarEnInicio()"><button type="button" class="btn-buscar" onclick="buscarEnInicio()">Buscar</button></div>
+<div id="buscarResultados"></div><div id="bannerLiveInicio"></div>
+<div class="card"><textarea id="inputPost" placeholder="Que estas pensando?"></textarea><select id="tipoPost"><option value="foto">Publicacion / Foto</option><option value="video">Video</option><option value="historia">Historia</option><option value="nota">Nota</option></select><label class="btn-gris" style="display:block;text-align:center;cursor:pointer">Subir foto / video<input type="file" id="inputArchivoPost" accept="image/*,video/*" style="display:none"></label><span id="nombreArchivoPost" style="font-size:12px;color:#aaa"></span><button type="button" id="btnPublicar" class="btn-rojo" onclick="publicarPost()">Publicar</button></div>
+<div id="feed"></div><button type="button" class="btn-gris" style="width:100%" onclick="cargarFeed()">Actualizar feed</button>
+</div>
+<div id="pantallaVivo" class="pantalla">
+<h2>En Vivo</h2>
+<div class="card">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><img id="fotoPerfilLive" src="" onclick="if(this.src) abrirFotoGrande(this.src)" class="foto-click" style="width:48px;height:48px;border-radius:50%;object-fit:cover;background:#2a2a33;display:none"><div id="fotoPerfilLiveVacia" style="width:48px;height:48px;border-radius:50%;background:#2a2a33;display:flex;align-items:center;justify-content:center;font-size:22px">👤</div><div style="flex:1;min-width:0"><div id="apodoLive" style="font-weight:900;font-size:17px">@chuy</div><div style="font-size:12px;color:#aaa">Cada live es su propio canal</div></div><button type="button" class="btn-gris" style="width:auto;padding:8px 12px;font-size:12px" onclick="abrirCompartir()">Compartir</button></div>
+<div style="display:flex;gap:6px"><button type="button" class="btn-rojo" style="flex:1;padding:10px 4px;font-size:12px" onclick="unirmeComoCreador()">📹<br>TRANSMITIR</button><button type="button" class="btn-gris" style="flex:1;padding:10px 4px;font-size:12px" onclick="unirmeComoEspectador()">👀<br>VER LIVE</button><button type="button" class="btn-gris" style="flex:1;padding:10px 4px;font-size:12px" onclick="unirmeComoInvitadoCamara()">🎥<br>CAMARA</button><button type="button" class="btn-gris" style="flex:1;padding:10px 4px;font-size:12px" onclick="unirmeComoInvitadoAudio()">🎤<br>MICROFONO</button></div>
+<p id="estadoCam" style="margin-top:10px;font-weight:bold">Sin camara - Elige Transmitir, Ver o Unirte</p><p id="contadorLive" style="font-size:13px;color:#aaa">En vivo: 1 persona</p>
+<button type="button" class="btn-gris" style="width:100%;margin-top:6px" onclick="salirDeLive()">⛔ Terminar / Salir de Live</button>
+<div class="vivoWrap"><div id="videoPrincipal" class="videoBox videoGrid"></div><div id="listaComentarios"></div><div class="fila cajaEscribir"><input id="inputComentario" placeholder="Escribe un comentario..."><button type="button" class="btn-rojo" onclick="enviarComentario()">Enviar</button><button type="button" class="btn-gift" onclick="toggleRegalos()">🎁</button><button type="button" class="btn-gris" onclick="abrirCompartir()">↗</button></div>
+<div id="giftPanel" class="gift-panel"><div style="display:flex;justify-content:space-between"><b>Regalos - Monedas: <span id="monedasPanel">500</span></b><button type="button" onclick="toggleRegalos()" style="background:transparent;color:#fff">✖️</button></div><div class="gift-grid" style="margin-top:10px"><div class="gift-item" onclick="enviarRegalo('Corazon',10)"><span>❤️</span>Corazon<br><small>10</small></div><div class="gift-item" onclick="enviarRegalo('Rosa',20)"><span>🌹</span>Rosa<br><small>20</small></div><div class="gift-item" onclick="enviarRegalo('Fuego',50)"><span>🔥</span>Fuego<br><small>50</small></div><div class="gift-item" onclick="enviarRegalo('Diamante',100)"><span>💎</span>Diamante<br><small>100</small></div><div class="gift-item" onclick="enviarRegalo('Corona',200)"><span>👑</span>Corona<br><small>200</small></div><div class="gift-item" onclick="enviarRegalo('Cohete',300)"><span>🚀</span>Cohete<br><small>300</small></div><div class="gift-item" onclick="enviarRegalo('Leon',500)"><span>🦁</span>Leon<br><small>500</small></div><div class="gift-item" onclick="enviarRegalo('Universo',1000)"><span>🌌</span>Universo<br><small>1000</small></div></div><button type="button" class="btn-rojo" style="margin-top:10px" onclick="abrirComprarMonedas()">Recargar monedas</button></div></div>
+</div>
+</div>
+<div id="pantallaLives" class="pantalla"><h2>Lives</h2><div id="listaLives"></div><button type="button" class="btn-gris" style="width:100%" onclick="cargarLivesDemo()">Ver quien esta en vivo</button></div>
+<div id="pantallaPerfil" class="pantalla">
+<h2>Perfil</h2>
+<div class="card" style="text-align:center">
+<img id="fotoPerfilGrande" src="" onclick="if(this.src) abrirFotoGrande(this.src)" class="foto-click" style="width:100px;height:100px;border-radius:50%;object-fit:cover;background:#2a2a33;display:none;margin:0 auto">
+<div id="fotoPerfilGrandeVacia" style="width:100px;height:100px;border-radius:50%;background:#2a2a33;display:flex;align-items:center;justify-content:center;font-size:40px;margin:0 auto">👤</div>
+<h3 id="nombrePerfil" style="margin-top:10px">Usuario</h3>
+<p id="apodoPerfil" style="color:#aaa">@apodo</p>
+<div class="stats"><div><b id="statSeguidores">0</b><span>Seguidores</span></div><div><b id="statSeguidos">0</b><span>Seguidos</span></div><div><b id="statMonedas">500</b><span>Monedas</span></div></div>
+<label class="btn-gris" style="display:block;text-align:center;cursor:pointer;margin-top:10px">Cambiar foto de perfil<input type="file" id="inputFotoPerfil" accept="image/*" style="display:none"></label>
+<input id="inputBioPerfil" placeholder="Tu biografia...">
+<input id="inputApodoPerfil" placeholder="Cambiar apodo">
+<button type="button" class="btn-rojo" onclick="guardarPerfil()">Guardar perfil</button>
+</div>
+<div class="card">
+<h3>Ajustes</h3>
+<button type="button" class="btn-gris" style="width:100%;margin-top:8px" onclick="abrirComprarMonedas()">💰 Comprar monedas</button>
+<button type="button" class="btn-gris" style="width:100%;margin-top:8px" onclick="document.getElementById('modalPolitica').classList.add('show')">📜 Politica de Privacidad</button>
+<button type="button" class="btn-gris btn-borrar" style="width:100%;margin-top:8px" onclick="borrarCuenta()">🗑️ Borrar mi cuenta</button>
+<button type="button" class="btn-gris" style="width:100%;margin-top:8px" onclick="cerrarSesion()">🚪 Cerrar sesion</button>
+</div>
+<div class="card"><h3>Mis publicaciones</h3><div id="misPosts"></div></div>
+</div>
+<div id="pantallaMensajes" class="pantalla">
+<h2>Mensajes</h2>
+<div class="buscar-row"><input id="inputBuscarAmigo" placeholder="Buscar amigo por apodo..." onkeydown="if(event.key==='Enter') buscarAmigo()"><button type="button" class="btn-buscar" onclick="buscarAmigo()">Buscar</button></div>
+<div id="buscarAmigoResultados"></div>
+<div class="card"><h3>Amigos / Chats</h3><div id="listaAmigos"></div><p id="sinAmigos" style="color:#aaa;font-size:13px">Aun no tienes chats. Busca un amigo por apodo y mandale mensaje.</p></div>
+<div class="card"><h3>Personas que te siguen</h3><div id="listaSeguidores"></div></div>
+</div>
+<div id="pantallaChat" class="pantalla">
+<button type="button" class="btn-gris" onclick="mostrar('mensajes')">← Volver</button>
+<div class="card">
+<div style="display:flex;align-items:center;gap:10px">
+<img id="fotoChat" src="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;background:#444;display:none">
+<div style="flex:1"><b id="nombreChat">Chat</b><div id="apodoChat" style="font-size:12px;color:#aaa">@apodo</div></div>
+<button type="button" class="btn-gris" style="width:auto" onclick="iniciarLlamadaVideo()">📹 Video</button>
+<button type="button" class="btn-gris" style="width:auto" onclick="iniciarLlamadaAudio()">📞 Audio</button>
+</div>
+</div>
+<div id="llamadaBox" class="llamadaBox">
+<div id="llamadaVideos" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+<p id="estadoLlamada" style="margin:10px 0;font-weight:bold">Llamada</p>
+<div style="display:flex;gap:8px;justify-content:center">
+<button type="button" class="btn-gris" onclick="toggleMicroLlamada()">🎤 Micro</button>
+<button type="button" class="btn-gris" onclick="toggleCamaraLlamada()">📹 Camara</button>
+<button type="button" class="btn-rojo" style="width:auto;background:#e50914" onclick="colgarLlamada()">📞 Colgar</button>
+</div>
+</div>
+<div class="card"><div id="chatBox" class="chat-box"></div>
+<div style="display:flex;gap:6px;margin-top:8px">
+<input id="inputMensajeChat" placeholder="Escribe un mensaje..." onkeydown="if(event.key==='Enter') enviarMensajeChat()">
+<label class="btn-gris" style="width:auto;cursor:pointer">📷<input type="file" id="inputFotoChat" accept="image/*" style="display:none"></label>
+<button type="button" class="btn-rojo" style="width:auto" onclick="enviarMensajeChat()">Enviar</button>
+</div>
+</div>
+</div>
+<div id="modalLlamada" class="modal-llamada">
+<div style="font-size:50px">📞</div>
+<h2 id="tituloLlamadaEntrante">Te estan llamando</h2>
+<p id="textoLlamadaEntrante" style="color:#aaa;margin:10px 0">Alguien quiere hablar contigo</p>
+<div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
+<button type="button" class="btn-rojo" style="width:auto;background:#22c55e" onclick="aceptarLlamada()">✅ Contestar</button>
+<button type="button" class="btn-rojo" style="width:auto;background:#e50914" onclick="rechazarLlamada()">❌ Rechazar</button>
+</div>
+</div>
+<div id="shareModal" class="share-modal">
+<h3>Compartir Live</h3>
+<p style="font-size:13px;color:#aaa;margin:8px 0">Comparte tu live con tus amigos</p>
+<input id="inputLinkCompartir" readonly value="">
+<button type="button" class="btn-rojo" onclick="copiarLink()">Copiar link</button>
+<button type="button" class="btn-gris" style="margin-top:8px" onclick="cerrarCompartir()">Cerrar</button>
+</div>
+<div id="modalComprar" class="share-modal">
+<h3>Recargar monedas</h3>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+<button type="button" class="btn-gris" onclick="comprarMonedas(100)">100 🪙</button>
+<button type="button" class="btn-gris" onclick="comprarMonedas(500)">500 🪙</button>
+<button type="button" class="btn-gris" onclick="comprarMonedas(1000)">1000 🪙</button>
+<button type="button" class="btn-gris" onclick="comprarMonedas(5000)">5000 🪙</button>
+</div>
+<button type="button" class="btn-gris" style="margin-top:10px" onclick="document.getElementById('modalComprar').classList.remove('show')">Cerrar</button>
+</div>
+<div id="modalFoto" class="modal-foto">
+<img id="imgFotoGrande" src="">
+<button type="button" class="btn-rojo cerrar" onclick="document.getElementById('modalFoto').classList.remove('show')">Cerrar</button>
+</div>
+<script>
+var usuarioActual=null, miApodo='', miUidFirebase='', chatActualId=null, chatActualOtroUid=null, chatActualOtroApodo='', monedasActuales=500, notificacionActual=null, clienteAgora=null, clienteLlamada=null, pistaLocalVideo=null, pistaLocalAudio=null, pistaLlamadaVideo=null, pistaLlamadaAudio=null, estoyEnLive=false, miRolLive='espectador', miCanalLiveActual='';
+function mostrar(nombre){
+  document.querySelectorAll('.pantalla').forEach(function(p){p.classList.remove('show')});
+  document.querySelectorAll('.topnav button').forEach(function(b){b.classList.remove('activo')});
+  var mapa={inicio:'pantallaInicio',vivo:'pantallaVivo',lives:'pantallaLives',mensajes:'pantallaMensajes',perfil:'pantallaPerfil'};
+  var el=document.getElementById(mapa[nombre]||'pantallaInicio'); if(el) el.classList.add('show');
+  var btnMapa={inicio:'btnNavInicio',vivo:'btnNavVivo',lives:'btnNavLives',mensajes:'btnNavMensajes',perfil:'btnNavPerfil'};
+  var btn=document.getElementById(btnMapa[nombre]); if(btn) btn.classList.add('activo');
+  if(nombre==='perfil') cargarPerfil();
+  if(nombre==='mensajes') cargarAmigos();
+  if(nombre==='inicio') cargarFeed();
+  if(nombre==='vivo') actualizarInfoLive();
+  if(nombre==='lives') cargarLivesDemo();
+}
+function cambiarTab(tipo){
+  var esCrear=tipo==='crear';
+  document.getElementById('camposCrear').style.display=esCrear?'block':'none';
+  document.getElementById('camposEntrar').style.display=esCrear?'none':'block';
+  document.getElementById('tituloLogin').textContent=esCrear?'Crear Cuenta':'Entrar';
+  document.getElementById('btnTabCrear').className=esCrear?'btn-rojo':'btn-gris';
+  document.getElementById('btnTabEntrar').className=esCrear?'btn-gris':'btn-rojo';
+}
+function actualizarInfoLive(){
+  var apodo=localStorage.getItem('apodo')||'chuy';
+  var el=document.getElementById('apodoLive'); if(el) el.textContent='@'+apodo;
+  var foto=localStorage.getItem('fotoPerfil')||'';
+  var img=document.getElementById('fotoPerfilLive'); var vacia=document.getElementById('fotoPerfilLiveVacia');
+  if(foto&&img){img.src=foto;img.style.display='block';if(vacia)vacia.style.display='none';}
+}
+async function crearCuenta(){
+  try{
+    var nombre=document.getElementById('inputNombre').value.trim();
+    var apodo=limpiarApodo(document.getElementById('inputApodo').value.trim());
+    var correo=document.getElementById('inputCorreo').value.trim();
+    var edad=parseInt(document.getElementById('inputEdad').value);
+    var pais=document.getElementById('inputPais').value;
+    var pass=document.getElementById('inputPass').value;
+    if(!nombre||!apodo||!correo||!edad||!pais||!pass) return alert('Llena todos los campos');
+    if(!document.getElementById('checkTerminos').checked) return alert('Acepta la Politica de Privacidad');
+    if(edad<18) return alert('Debes ser mayor de 18');
+    if(pass.length<6) return alert('Contrasena minimo 6 letras');
+    var existe=await dbFirebase.ref('apodos/'+apodo).once('value');
+    if(existe.val()) return alert('Ese apodo ya existe, elige otro');
+    var cred=await authFirebase.createUserWithEmailAndPassword(correo, pass);
+    var uid=cred.user.uid;
+    var datos={nombre:nombre, apodo:apodo, correo:correo, edad:edad, pais:pais, foto:'', bio:'', monedas:500, creado:Date.now()};
+    await dbFirebase.ref('usuarios/'+uid).set(datos);
+    await dbFirebase.ref('apodos/'+apodo).set(uid);
+    localStorage.setItem('apodo', apodo); localStorage.setItem('miUid', uid);
+    alert('Cuenta creada! Ahora entra con tu correo'); cambiarTab('entrar');
+  }catch(e){ alert('Error: '+e.message); }
+}
+async function entrarCuenta(){
+  try{
+    var correo=document.getElementById('inputCorreoLogin').value.trim();
+    var pass=document.getElementById('inputPassLogin').value;
+    var cred=await authFirebase.signInWithEmailAndPassword(correo, pass);
+    var uid=cred.user.uid;
+    var snap=await dbFirebase.ref('usuarios/'+uid).once('value');
+    var datos=snap.val()||{};
+    miApodo=datos.apodo||''; localStorage.setItem('apodo', miApodo); localStorage.setItem('miUid', uid); localStorage.setItem('fotoPerfil', datos.foto||'');
+    if(miApodo){ try{ await dbFirebase.ref('apodos/'+limpiarApodo(miApodo)).set(uid); }catch(e){} }
+    document.getElementById('pantallaLogin').classList.remove('show'); document.getElementById('topNav').classList.add('show');
+    mostrar('inicio'); escucharNotificaciones(uid);
+  }catch(e){ alert('Error al entrar: '+e.message); }
+}
+function olvidarPass(){
+  var correo=document.getElementById('inputCorreoLogin').value.trim();
+  if(!correo) return alert('Escribe tu correo primero');
+  authFirebase.sendPasswordResetEmail(correo).then(function(){alert('Te mandamos el codigo a tu correo');}).catch(function(e){alert(e.message);});
+}
+function cerrarSesion(){ authFirebase.signOut().then(function(){ localStorage.removeItem('apodo'); localStorage.removeItem('miUid'); location.reload(); }); }
+async function borrarCuenta(){
+  if(!confirm('¿Seguro que quieres borrar tu cuenta y todo?')) return;
+  try{
+    var user=authFirebase.currentUser; if(!user) return alert('Vuelve a entrar para borrar');
+    var uid=user.uid; var apodo=localStorage.getItem('apodo')||'';
+    await dbFirebase.ref('usuarios/'+uid).remove(); if(apodo) await dbFirebase.ref('apodos/'+apodo).remove();
+    await user.delete(); localStorage.clear(); location.reload();
+  }catch(e){ alert('Vuelve a entrar y vuelve a intentar borrar: '+e.message); }
+}
+authFirebase.onAuthStateChanged(async function(user){
+  if(user){
+    miUidFirebase=user.uid;
+    localStorage.setItem('miUid', user.uid);
+    var snap=await dbFirebase.ref('usuarios/'+user.uid).once('value');
+    var datos=snap.val()||{}; miApodo=datos.apodo||localStorage.getItem('apodo')||'';
+    if(miApodo) localStorage.setItem('apodo', miApodo);
+    if(datos.foto) localStorage.setItem('fotoPerfil', datos.foto);
+    if(datos.monedas!=null) monedasActuales=datos.monedas;
+    if(miApodo){ try{ await dbFirebase.ref('apodos/'+limpiarApodo(miApodo)).set(user.uid); }catch(e){} }
+    document.getElementById('pantallaLogin').classList.remove('show'); document.getElementById('topNav').classList.add('show');
+    mostrar('inicio'); escucharNotificaciones(user.uid);
+  } else { document.getElementById('pantallaLogin').classList.add('show'); document.getElementById('topNav').classList.remove('show'); }
+});
+async function cargarPerfil(){
+  var uid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:''); if(!uid) return;
+  var snap=await dbFirebase.ref('usuarios/'+uid).once('value'); var d=snap.val()||{};
+  document.getElementById('nombrePerfil').textContent=d.nombre||'Usuario';
+  document.getElementById('apodoPerfil').textContent='@'+(d.apodo||'');
+  document.getElementById('inputBioPerfil').value=d.bio||''; document.getElementById('inputApodoPerfil').value=d.apodo||'';
+  document.getElementById('statMonedas').textContent=d.monedas!=null?d.monedas:500; document.getElementById('monedasPanel').textContent=d.monedas!=null?d.monedas:500;
+  var foto=d.foto||''; var img=document.getElementById('fotoPerfilGrande'); var vacia=document.getElementById('fotoPerfilGrandeVacia');
+  if(foto){img.src=foto;img.style.display='block';vacia.style.display='none';}
+  var snapPosts=await dbFirebase.ref('posts').orderByChild('uid').equalTo(uid).once('value'); var html='';
+  snapPosts.forEach(function(c){var p=c.val(); html+='<div class="card"><p>'+escaparHTML(p.texto||'')+'</p>'+(p.imagen?'<img src="'+p.imagen+'" class="post-img">':'')+'<br><button class="btn-gris btn-borrar" onclick="borrarPost(\''+c.key+'\')">Borrar</button></div>';});
+  document.getElementById('misPosts').innerHTML=html||'<p style="color:#aaa">Sin publicaciones</p>';
+  var snapSeg=await dbFirebase.ref('seguidores/'+uid).once('value'); document.getElementById('statSeguidores').textContent=snapSeg.numChildren();
+  var snapSeg2=await dbFirebase.ref('seguidos/'+uid).once('value'); document.getElementById('statSeguidos').textContent=snapSeg2.numChildren();
+}
+async function guardarPerfil(){
+  var uid=localStorage.getItem('miUid'); if(!uid) return alert('Entra primero');
+  var bio=document.getElementById('inputBioPerfil').value;
+  await dbFirebase.ref('usuarios/'+uid).update({bio:bio}); alert('Perfil guardado');
+}
+document.getElementById('inputFotoPerfil').addEventListener('change', async function(e){
+  var file=e.target.files[0]; if(!file) return; var reader=new FileReader();
+  reader.onload=async function(){ var uid=localStorage.getItem('miUid'); if(!uid) return; await dbFirebase.ref('usuarios/'+uid).update({foto:reader.result}); localStorage.setItem('fotoPerfil', reader.result); alert('Foto actualizada'); cargarPerfil(); actualizarInfoLive(); };
+  reader.readAsDataURL(file);
+});
+document.getElementById('inputArchivoPost').addEventListener('change', function(e){ if(e.target.files[0]) document.getElementById('nombreArchivoPost').textContent='Archivo: '+e.target.files[0].name; });
+async function publicarPost(){
+  var uid=localStorage.getItem('miUid'); if(!uid) return alert('Entra primero');
+  var texto=document.getElementById('inputPost').value.trim(); var tipo=document.getElementById('tipoPost').value;
+  var file=document.getElementById('inputArchivoPost').files[0]; var apodo=localStorage.getItem('apodo')||''; var foto=localStorage.getItem('fotoPerfil')||'';
+  function guardar(imagen){ dbFirebase.ref('posts').push({uid:uid, apodo:apodo, foto:foto, texto:texto, tipo:tipo, imagen:imagen||'', fecha:Date.now(), likes:0}).then(function(){ document.getElementById('inputPost').value=''; document.getElementById('nombreArchivoPost').textContent=''; cargarFeed(); alert('Publicado!'); }); }
+  if(file){ var r=new FileReader(); r.onload=function(){guardar(r.result);}; r.readAsDataURL(file); } else guardar('');
+}
+async function cargarFeed(){
+  var snap=await dbFirebase.ref('posts').orderByChild('fecha').limitToLast(30).once('value');
+  var arr=[]; snap.forEach(function(c){arr.push({key:c.key,v:c.val()});}); arr.reverse(); var html='';
+  arr.forEach(function(item){ var p=item.v; html+='<div class="card"><div style="display:flex;gap:8px;align-items:center">'+(p.foto?'<img src="'+p.foto+'" style="width:36px;height:36px;border-radius:50%;object-fit:cover">':'<div style="width:36px;height:36px;border-radius:50%;background:#333;display:flex;align-items:center;justify-content:center">👤</div>')+'<b>@'+escaparHTML(p.apodo||'')+'</b><button class="btn-gris" style="width:auto;margin-left:auto" onclick="seguirUsuario(\''+p.uid+'\',\''+escaparHTML(p.apodo||'')+'\')">Seguir</button></div><p style="margin:8px 0">'+escaparHTML(p.texto||'')+'</p>'+(p.imagen?'<img src="'+p.imagen+'" class="post-img">':'')+'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn-gris" onclick="darLike(\''+item.key+'\')">❤️ '+(p.likes||0)+'</button><button class="btn-gris" onclick="abrirChat(\''+p.uid+'\',\''+escaparHTML(p.apodo||'')+'\')">Chat</button></div></div>'; });
+  document.getElementById('feed').innerHTML=html||'<p style="color:#aaa">Sin publicaciones aun. Se el primero!</p>';
+  var snapL=await dbFirebase.ref('lives').once('value'); var livesHtml='';
+  snapL.forEach(function(c){ var l=c.val(); if(l&&l.activo) livesHtml+='<div class="bannerLive"><span>🔴 @'+escaparHTML(l.apodo)+' en vivo</span><button onclick="verLiveDe(\''+escaparHTML(l.apodo)+'\')">Ver</button></div>'; });
+  document.getElementById('bannerLiveInicio').innerHTML=livesHtml;
+}
+async function darLike(postId){ var ref=dbFirebase.ref('posts/'+postId+'/likes'); ref.transaction(function(cur){return (cur||0)+1;}); setTimeout(cargarFeed,300); }
+async function borrarPost(postId){ if(!confirm('¿Borrar esta publicacion?')) return; await dbFirebase.ref('posts/'+postId).remove(); cargarFeed(); cargarPerfil(); }
+async function buscarEnInicio(){
+  var q=limpiarBusqueda(document.getElementById('inputBuscar').value); if(!q) return cargarFeed();
+  try{
+    var snapApodo=await dbFirebase.ref('apodos/'+q).once('value');
+    var html='';
+    if(snapApodo.val()){
+      var uidOtro=snapApodo.val();
+      var snapU=await dbFirebase.ref('usuarios/'+uidOtro).once('value');
+      var u=snapU.val()||{};
+      html+='<div class="friend" onclick="abrirChat(\''+uidOtro+'\',\''+escaparHTML(u.apodo||q)+'\')"><div style="width:44px;height:44px;border-radius:50%;background:#444;display:flex;align-items:center;justify-content:center">👤</div><div><b>@'+escaparHTML(u.apodo||q)+'</b><div style="font-size:12px;color:#aaa">'+escaparHTML(u.nombre||'')+'</div></div><button class="btn-gris" style="width:auto">Chat</button></div>';
+      document.getElementById('buscarResultados').innerHTML=html; return;
+    }
+    var snap=await dbFirebase.ref('usuarios').once('value');
+    snap.forEach(function(c){ var u=c.val(); var apodoLimpio=limpiarBusqueda(u.apodo||''); var nombreLimpio=limpiarBusqueda(u.nombre||''); if(apodoLimpio.includes(q)||nombreLimpio.includes(q)){ html+='<div class="friend" onclick="abrirChat(\''+c.key+'\',\''+escaparHTML(u.apodo||'')+'\')"><div style="width:44px;height:44px;border-radius:50%;background:#444;display:flex;align-items:center;justify-content:center">👤</div><div><b>@'+escaparHTML(u.apodo||'')+'</b><div style="font-size:12px;color:#aaa">'+escaparHTML(u.nombre||'')+'</div></div><button class="btn-gris" style="width:auto">Chat</button></div>'; } });
+    document.getElementById('buscarResultados').innerHTML=html||'<p style="color:#aaa">Sin resultados para '+escaparHTML(q)+'</p>';
+  }catch(e){ document.getElementById('buscarResultados').innerHTML='<p style="color:#ff3b5c">Error Firebase: '+e.message+'</p>'; }
+}
+async function seguirUsuario(uidOtro, apodoOtro){
+  var miUid=localStorage.getItem('miUid'); if(!miUid) return alert('Entra primero');
+  await dbFirebase.ref('seguidores/'+uidOtro+'/'+miUid).set(true); await dbFirebase.ref('seguidos/'+miUid+'/'+uidOtro).set(true); alert('Ahora sigues a @'+apodoOtro);
+}
+async function cargarLivesDemo(){
+  var snap=await dbFirebase.ref('lives').once('value'); var html='';
+  snap.forEach(function(c){ var l=c.val(); if(l&&l.activo){ html+='<div class="card"><b>🔴 Live de @'+escaparHTML(l.apodo||'')+'</b><p style="color:#aaa;font-size:13px">Canal: '+escaparHTML(l.canal||'')+'</p><button class="btn-rojo" onclick="verLiveDe(\''+escaparHTML(l.apodo||'')+'\')">Ver live</button></div>'; } });
+  document.getElementById('listaLives').innerHTML=html||'<p style="color:#aaa">Nadie en vivo ahora</p>';
+}
+async function buscarAmigo(){
+  var q=limpiarBusqueda(document.getElementById('inputBuscarAmigo').value.trim()); if(!q) return;
+  try{
+    var snap=await dbFirebase.ref('apodos/'+q).once('value');
+    if(!snap.val()){ document.getElementById('buscarAmigoResultados').innerHTML='<p style="color:#aaa">No se encontro @'+escaparHTML(q)+' - dile que cierre sesion y vuelva a entrar para que se registre su apodo</p>'; return; }
+    var uidOtro=snap.val(); var snapU=await dbFirebase.ref('usuarios/'+uidOtro).once('value'); var u=snapU.val()||{};
+    document.getElementById('buscarAmigoResultados').innerHTML='<div class="friend" onclick="abrirChat(\''+uidOtro+'\',\''+escaparHTML(u.apodo||q)+'\')"><b>@'+escaparHTML(u.apodo||q)+'</b><span style="margin-left:auto;color:#aaa">Chat →</span></div>';
+  }catch(e){ document.getElementById('buscarAmigoResultados').innerHTML='<p style="color:#ff3b5c">Error Firebase: '+e.message+'</p>'; }
+}
+async function cargarAmigos(){
+  var miUid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:''); if(!miUid) return;
+  var snap=await dbFirebase.ref('chats').once('value'); var html='';
+  snap.forEach(function(c){ var id=c.key; var partes=id.split('_'); if(partes.includes(miUid)){ var otroUid=partes[0]===miUid?partes[1]:partes[0]; html+='<div class="friend" onclick="abrirChat(\''+otroUid+'\',\'\')"><div style="width:44px;height:44px;border-radius:50%;background:#444;display:flex;align-items:center;justify-content:center">👤</div><div><b>Chat</b><div style="font-size:12px;color:#aaa">'+id+'</div></div><button class="btn-gris" style="width:auto">Abrir</button></div>'; } });
+  document.getElementById('listaAmigos').innerHTML=html||''; document.getElementById('sinAmigos').style.display=html?'none':'block';
+  var snapSeg=await dbFirebase.ref('seguidores/'+miUid).once('value'); var html2='';
+  snapSeg.forEach(function(c){ html2+='<div class="friend"><b>'+c.key+'</b></div>'; });
+  document.getElementById('listaSeguidores').innerHTML=html2||'<p style="color:#aaa">Nadie te sigue aun</p>';
+}
+function idChatCon(otroUid){ var miUid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:''); return [miUid, otroUid].sort().join('_'); }
+async function abrirChat(otroUid, apodoOtro){
+  chatActualOtroUid=otroUid; chatActualOtroApodo=apodoOtro||''; chatActualId=idChatCon(otroUid);
+  if(!apodoOtro){ var snap=await dbFirebase.ref('usuarios/'+otroUid).once('value'); var u=snap.val()||{}; chatActualOtroApodo=u.apodo||''; }
+  document.getElementById('nombreChat').textContent=chatActualOtroApodo||'Chat'; document.getElementById('apodoChat').textContent='@'+chatActualOtroApodo;
+  document.querySelectorAll('.pantalla').forEach(function(p){p.classList.remove('show')}); document.getElementById('pantallaChat').classList.add('show'); escucharChat();
+}
+function escucharChat(){
+  if(!chatActualId) return;
+  dbFirebase.ref('chats/'+chatActualId+'/mensajes').off();
+  dbFirebase.ref('chats/'+chatActualId+'/mensajes').limitToLast(50).on('value', function(snap){
+    var html=''; var miUid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:'');
+    snap.forEach(function(c){ var m=c.val(); var mio=m.de===miUid; html+='<div class="msg '+(mio?'mio':'')+'"><b style="font-size:11px">'+escaparHTML(m.apodo||'')+'</b><br>'+escaparHTML(m.texto||'')+(m.imagen?'<img src="'+m.imagen+'">':'')+'</div>'; });
+    document.getElementById('chatBox').innerHTML=html; document.getElementById('chatBox').scrollTop=document.getElementById('chatBox').scrollHeight;
+  });
+}
+async function enviarMensajeChat(){
+  var texto=document.getElementById('inputMensajeChat').value.trim(); if(!texto||!chatActualId) return;
+  var miUid=localStorage.getItem('miUid')||(authFirebase.currentUser?authFirebase.currentUser.uid:'');
+  await dbFirebase.ref('chats/'+chatActualId+'/mensajes').push({de:miUid, apodo:localStorage.getItem('apodo')||'', texto:texto, fecha:Date.now()});
+  document.getElementById('inputMensajeChat').value='';
+}
+document.getElementById('inputFotoChat').addEventListener('change', function(e){
+  var file=e.target.files[0]; if(!file||!chatActualId) return; var r=new FileReader(); r.onload=async function(){ await dbFirebase.ref('chats/'+chatActualId+'/mensajes').push({de:localStorage.getItem('miUid'), apodo:localStorage.getItem('apodo')||'', texto:'📷 Foto', imagen:r.result, fecha:Date.now()}); }; r.readAsDataURL(file);
+});
+function escucharNotificaciones(miUid){
+  dbFirebase.ref('llamadas/'+miUid).off();
+  dbFirebase.ref('llamadas/'+miUid).on('value', function(snap){
+    var d=snap.val(); if(!d||!d.activa){ document.getElementById('modalLlamada').classList.remove('show'); return; }
+    notificacionActual=d;
+    document.getElementById('tituloLlamadaEntrante').textContent='Te esta llamando @'+(d.deApodo||'');
+    document.getElementById('textoLlamadaEntrante').textContent=(d.tipo==='video'?'Llamada de video':'Llamada de audio')+' - Canal: '+d.canal;
+    document.getElementById('modalLlamada').classList.add('show');
+    var banner=document.getElementById('bannerNoti'); banner.textContent='📞 Llamada de @'+(d.deApodo||''); banner.style.display='block';
+  });
+  dbFirebase.ref('notis/'+miUid).limitToLast(1).on('child_added', function(snap){
+    var n=snap.val(); if(!n) return; var banner=document.getElementById('bannerNoti'); banner.textContent=n.texto||'Nueva notificacion'; banner.style.display='block'; notificacionActual=n; setTimeout(function(){banner.style.display='none';},6000);
+  });
+}
+function irANotificacion(){ document.getElementById('bannerNoti').style.display='none'; if(notificacionActual&&notificacionActual.chatId) abrirChat(notificacionActual.deUid, notificacionActual.deApodo); }
+async function enviarComentario(){
+  var texto=document.getElementById('inputComentario').value.trim(); if(!texto) return;
+  var apodo=localStorage.getItem('apodo')||'anon'; var canal=miCanalLiveActual||obtenerCanal();
+  await dbFirebase.ref('comentarios_live/'+canal).push({apodo:apodo, texto:texto, fecha:Date.now()});
+  document.getElementById('inputComentario').value='';
+}
+function escucharComentariosLive(canal){
+  dbFirebase.ref('comentarios_live/'+canal).off();
+  dbFirebase.ref('comentarios_live/'+canal).limitToLast(20).on('value', function(snap){
+    var html=''; snap.forEach(function(c){var m=c.val(); html+='<div class="comentario"><b>@'+escaparHTML(m.apodo||'')+'</b> '+escaparHTML(m.texto||'')+'</div>';});
+    document.getElementById('listaComentarios').innerHTML=html;
+  });
+}
+function toggleRegalos(){ document.getElementById('giftPanel').classList.toggle('show'); }
+async function enviarRegalo(nombre, costo){
+  var uid=localStorage.getItem('miUid'); if(!uid) return alert('Entra primero');
+  if(monedasActuales<costo) return alert('No tienes suficientes monedas. Recarga!');
+  monedasActuales-=costo; await dbFirebase.ref('usuarios/'+uid).update({monedas:monedasActuales});
+  document.getElementById('monedasPanel').textContent=monedasActuales; document.getElementById('statMonedas').textContent=monedasActuales;
+  var canal=miCanalLiveActual||obtenerCanal();
+  await dbFirebase.ref('comentarios_live/'+canal).push({apodo:localStorage.getItem('apodo')||'', texto:'mando regalo '+nombre+' 🎁', fecha:Date.now()});
+  alert('Mandaste '+nombre+'!'); toggleRegalos();
+}
+function abrirComprarMonedas(){ document.getElementById('modalComprar').classList.add('show'); }
+async function comprarMonedas(cant){
+  var uid=localStorage.getItem('miUid'); if(!uid) return; monedasActuales+=cant;
+  await dbFirebase.ref('usuarios/'+uid).update({monedas:monedasActuales});
+  document.getElementById('monedasPanel').textContent=monedasActuales; alert('Recargaste '+cant+' monedas (demo)'); document.getElementById('modalComprar').classList.remove('show');
+}
+function abrirCompartir(){ var canal=miCanalLiveActual||obtenerCanal(); document.getElementById('inputLinkCompartir').value=location.origin+location.pathname+'?live='+canal; document.getElementById('shareModal').classList.add('show'); }
+function copiarLink(){ var i=document.getElementById('inputLinkCompartir'); i.select(); document.execCommand('copy'); alert('Link copiado!'); }
+function cerrarCompartir(){ document.getElementById('shareModal').classList.remove('show'); }
+function abrirFotoGrande(src){ document.getElementById('imgFotoGrande').src=src; document.getElementById('modalFoto').classList.add('show'); }
+function crearTile(uid, nombre){
+  var grid=document.getElementById('videoPrincipal'); var viejo=document.getElementById('tile-'+uid); if(viejo) viejo.remove();
+  var div=document.createElement('div'); div.id='tile-'+uid; div.className='tile'; div.innerHTML='<div class="avatar">👤</div><div class="nombre">@'+escaparHTML(nombre||('user'+uid))+'</div>';
+  grid.appendChild(div); var tiles=grid.querySelectorAll('.tile'); tiles.forEach(function(t){t.classList.toggle('solo', tiles.length===1);}); return div;
+}
+function actualizarContadorLive(){ var grid=document.getElementById('videoPrincipal'); var n=grid.querySelectorAll('.tile').length; document.getElementById('contadorLive').textContent='En vivo: '+(n||1)+' persona'+(n===1?'':'s'); }
+async function salirDeLive(){
+  try{
+    if(pistaLocalVideo){pistaLocalVideo.stop();pistaLocalVideo.close();pistaLocalVideo=null;}
+    if(pistaLocalAudio){pistaLocalAudio.stop();pistaLocalAudio.close();pistaLocalAudio=null;}
+    if(clienteAgora){await clienteAgora.leave();clienteAgora=null;}
+  }catch(e){}
+  if(miRolLive==='creador'&&miCanalLiveActual){ try{ await dbFirebase.ref('lives/'+miCanalLiveActual).remove(); }catch(e){} }
+  if(miCanalLiveActual){ try{ dbFirebase.ref('comentarios_live/'+miCanalLiveActual).off(); }catch(e){} }
+  document.getElementById('videoPrincipal').innerHTML=''; document.getElementById('estadoCam').textContent='Sin camara - Elige Transmitir, Ver o Unirte'; estoyEnLive=false; miCanalLiveActual=''; actualizarContadorLive();
+}
+function verLiveDe(apodo){ mostrar('vivo'); unirmeComoEspectador(obtenerCanalDe(apodo), apodo); }
+async function unirmeComoCreador(){
+  await salirDeLive();
+  var apodo=localStorage.getItem('apodo')||'chuy';
+  var canal=obtenerCanal(apodo);
+  var miUid=uidAgora(apodo); miCanalLiveActual=canal;
+  document.getElementById('estadoCam').textContent='Conectando a tu live '+canal+'... Pide token al servidor';
+  try{
+    var token=await obtenerToken(canal, miUid);
+    clienteAgora=AgoraRTC.createClient({mode:'live', codec:'vp8'});
+    clienteAgora.on('user-published', async function(user, mediaType){
+      await clienteAgora.subscribe(user, mediaType);
+      if(mediaType==='video'){ var tile=crearTile(user.uid, 'Invitado '+user.uid); tile.innerHTML=''; user.videoTrack.play(tile); var nom=document.createElement('div'); nom.className='nombre'; nom.textContent='Invitado '+user.uid; tile.appendChild(nom); }
+      if(mediaType==='audio'){ user.audioTrack.play(); }
+      actualizarContadorLive();
+    });
+    clienteAgora.on('user-unpublished', function(user){ var t=document.getElementById('tile-'+user.uid); if(t) t.remove(); actualizarContadorLive(); });
+    clienteAgora.on('user-left', function(user){ var t=document.getElementById('tile-'+user.uid); if(t) t.remove(); actualizarContadorLive(); });
+    await clienteAgora.setClientRole('host');
+    await clienteAgora.join(APP_ID_AGORA, canal, token, miUid);
+    pistaLocalAudio=await AgoraRTC.createMicrophoneAudioTrack(); pistaLocalVideo=await AgoraRTC.createCameraVideoTrack();
+    var tile=crearTile(miUid, apodo); tile.innerHTML=''; pistaLocalVideo.play(tile); var nom=document.createElement('div'); nom.className='nombre'; nom.textContent='@'+apodo+' (Tu)'; tile.appendChild(nom);
+    await clienteAgora.publish([pistaLocalAudio, pistaLocalVideo]);
+    estoyEnLive=true; miRolLive='creador';
+    document.getElementById('estadoCam').textContent='🔴 EN VIVO como @'+apodo+' - Canal '+canal+' - UID '+miUid;
+    escucharComentariosLive(canal); actualizarContadorLive();
+    await dbFirebase.ref('lives/'+canal).set({apodo:apodo, canal:canal, uid:miUid, fecha:Date.now(), activo:true});
+  }catch(e){ alert('Error al transmitir: '+e.message); document.getElementById('estadoCam').textContent='Error al transmitir'; }
+}
+async function unirmeComoEspectador(canalForzado, apodoForzado){
+  await salirDeLive();
+  var canalDestino=canalForzado||obtenerCanal();
+  var apodo=localStorage.getItem('apodo')||'anon';
+  var miUid=uidAgora(apodo)+500000; miCanalLiveActual=canalDestino;
+  document.getElementById('estadoCam').textContent='Entrando como espectador a '+canalDestino+'...';
+  try{
+    var token=await obtenerToken(canalDestino, miUid);
+    clienteAgora=AgoraRTC.createClient({mode:'live', codec:'vp8'});
+    clienteAgora.on('user-published', async function(user, mediaType){
+      await clienteAgora.subscribe(user, mediaType);
+      if(mediaType==='video'){ var tile=crearTile(user.uid, apodoForzado||'Live'); tile.innerHTML=''; user.videoTrack.play(tile); var nom=document.createElement('div'); nom.className='nombre'; nom.textContent=apodoForzado?'@'+apodoForzado:'En vivo'; tile.appendChild(nom); }
+      if(mediaType==='audio'){ user.audioTrack.play(); }
+      actualizarContadorLive();
+    });
+    clienteAgora.on('user-unpublished', function(user){ var t=document.getElementById('tile-'+user.uid); if(t) t.remove(); actualizarContadorLive(); });
+    clienteAgora.on('user-left', function(user){ var t=document.getElementById('tile-'+user.uid); if(t) t.remove(); actualizarContadorLive(); });
+    await clienteAgora.setClientRole('audience');
+    await clienteAgora.join(APP_ID_AGORA, canalDestino, token, miUid);
+    estoyEnLive=true; miRolLive='espectador';
+    document.getElementById('estadoCam').textContent='👀 Viendo live '+canalDestino+' - Tu UID '+miUid;
+    escucharComentariosLive(canalDestino); actualizarContadorLive();
+  }catch(e){ alert('Error al ver live: '+e.message); }
+}
+async function unirmeComoInvitadoCamara(){
+  var canalDestino=miCanalLiveActual||obtenerCanal();
+  var apodo=localStorage.getItem('apodo')||'yo'; var miUid=uidAgora(apodo)+700000;
+  document.getElementById('estadoCam').textContent='Uniendote con camara a '+canalDestino+'...';
+  try{
+    if(!clienteAgora){
+      var token0=await obtenerToken(canalDestino, miUid);
+      clienteAgora=AgoraRTC.createClient({mode:'live', codec:'vp8'});
+      clienteAgora.on('user-published', async function(user, mediaType){ await clienteAgora.subscribe(user, mediaType); if(mediaType==='video'){ var tile=crearTile(user.uid, 'User '+user.uid); tile.innerHTML=''; user.videoTrack.play(tile); } if(mediaType==='audio'){ user.audioTrack.play(); } actualizarContadorLive(); });
+      await clienteAgora.setClientRole('host'); await clienteAgora.join(APP_ID_AGORA, canalDestino, token0, miUid); miCanalLiveActual=canalDestino;
+    }
+    pistaLocalAudio=await AgoraRTC.createMicrophoneAudioTrack(); pistaLocalVideo=await AgoraRTC.createCameraVideoTrack();
+    var tile=crearTile(miUid, apodo); tile.innerHTML=''; pistaLocalVideo.play(tile);
+    await clienteAgora.publish([pistaLocalAudio, pistaLocalVideo]);
+    document.getElementById('estadoCam').textContent='🎥 En vivo con camara en '+canalDestino; escucharComentariosLive(canalDestino); actualizarContadorLive();
+  }catch(e){ alert('Error camara: '+e.message); }
+}
+async function unirmeComoInvitadoAudio(){
+  var canalDestino=miCanalLiveActual||obtenerCanal();
+  var apodo=localStorage.getItem('apodo')||'yo'; var miUid=uidAgora(apodo)+800000;
+  document.getElementById('estadoCam').textContent='Uniendote con microfono a '+canalDestino+'...';
+  try{
+    if(!clienteAgora){
+      var token0=await obtenerToken(canalDestino, miUid);
+      clienteAgora=AgoraRTC.createClient({mode:'live', codec:'vp8'});
+      clienteAgora.on('user-published', async function(user, mediaType){ await clienteAgora.subscribe(user, mediaType); if(mediaType==='video'){ var tile=crearTile(user.uid, 'User '+user.uid); tile.innerHTML=''; user.videoTrack.play(tile); } if(mediaType==='audio'){ user.audioTrack.play(); } actualizarContadorLive(); });
+      await clienteAgora.setClientRole('host'); await clienteAgora.join(APP_ID_AGORA, canalDestino, token0, miUid); miCanalLiveActual=canalDestino;
+    }
+    pistaLocalAudio=await AgoraRTC.createMicrophoneAudioTrack(); var tile=crearTile(miUid, apodo); tile.innerHTML='<div class="avatar">🎤</div>';
+    await clienteAgora.publish([pistaLocalAudio]);
+    document.getElementById('estadoCam').textContent='🎤 En vivo con microfono en '+canalDestino; escucharComentariosLive(canalDestino); actualizarContadorLive();
+  }catch(e){ alert('Error microfono: '+e.message); }
+}
+async function iniciarLlamadaVideo(){ iniciarLlamada('video'); }
+async function iniciarLlamadaAudio(){ iniciarLlamada('audio'); }
+async function iniciarLlamada(tipo){
+  if(!chatActualId||!chatActualOtroUid) return alert('Abre un chat primero');
+  var miUid=localStorage.getItem('miUid')||''; var miApodo=localStorage.getItem('apodo')||'';
+  var canal=canalLlamada(chatActualId);
+  await dbFirebase.ref('llamadas/'+chatActualOtroUid).set({activa:true, deUid:miUid, deApodo:miApodo, chatId:chatActualId, canal:canal, tipo:tipo, fecha:Date.now()});
+  await dbFirebase.ref('notis/'+chatActualOtroUid).push({texto:'📞 Llamada de @'+miApodo, deUid:miUid, deApodo:miApodo, chatId:chatActualId, fecha:Date.now()});
+  await entrarALlamada(canal, tipo, true);
+}
+async function aceptarLlamada(){
+  var d=notificacionActual; if(!d) return;
+  document.getElementById('modalLlamada').classList.remove('show');
+  chatActualId=d.chatId; chatActualOtroUid=d.deUid; chatActualOtroApodo=d.deApodo||'';
+  await entrarALlamada(d.canal, d.tipo||'video', false);
+  document.querySelectorAll('.pantalla').forEach(function(p){p.classList.remove('show')}); document.getElementById('pantallaChat').classList.add('show'); escucharChat();
+}
+async function rechazarLlamada(){
+  var d=notificacionActual; document.getElementById('modalLlamada').classList.remove('show'); document.getElementById('bannerNoti').style.display='none';
+  if(d){ var miUid=localStorage.getItem('miUid'); await dbFirebase.ref('llamadas/'+miUid).remove(); }
+  notificacionActual=null;
+}
+async function entrarALlamada(canal, tipo, soyQuienLlama){
+  var apodo=localStorage.getItem('apodo')||'anon';
+  var miUidLlamada=uidAgora(apodo);
+  document.getElementById('llamadaBox').classList.add('show');
+  document.getElementById('estadoLlamada').textContent='Conectando llamada '+canal+'... Pide token';
+  try{
+    var token=await obtenerToken(canal, miUidLlamada);
+    clienteLlamada=AgoraRTC.createClient({mode:'rtc', codec:'vp8'});
+    clienteLlamada.on('user-published', async function(user, mediaType){
+      await clienteLlamada.subscribe(user, mediaType);
+      var cont=document.getElementById('llamadaVideos'); var viejo=document.getElementById('llamada-remote-'+user.uid); if(viejo) viejo.remove();
+      if(mediaType==='video'){ var div=document.createElement('div'); div.id='llamada-remote-'+user.uid; div.innerHTML='<video style="width:100%;border-radius:10px"></video>'; cont.appendChild(div); user.videoTrack.play(div.querySelector('video')); }
+      if(mediaType==='audio'){ user.audioTrack.play(); }
+    });
+    clienteLlamada.on('user-left', function(user){ var t=document.getElementById('llamada-remote-'+user.uid); if(t) t.remove(); });
+    await clienteLlamada.join(APP_ID_AGORA, canal, token, miUidLlamada);
+    pistaLlamadaAudio=await AgoraRTC.createMicrophoneAudioTrack(); var cont=document.getElementById('llamadaVideos'); cont.innerHTML='';
+    if(tipo==='video'){
+      pistaLlamadaVideo=await AgoraRTC.createCameraVideoTrack();
+      var divYo=document.createElement('div'); divYo.id='llamada-yo'; divYo.innerHTML='<div style="background:#222;border-radius:10px;height:200px;display:flex;align-items:center;justify-content:center">Tu camara</div>'; cont.appendChild(divYo); pistaLlamadaVideo.play(divYo);
+      await clienteLlamada.publish([pistaLlamadaAudio, pistaLlamadaVideo]);
+    } else {
+      var divYo2=document.createElement('div'); divYo2.innerHTML='<div style="background:#222;border-radius:10px;height:120px;display:flex;align-items:center;justify-content:center;font-size:40px">🎤 Solo audio</div>'; cont.appendChild(divYo2); await clienteLlamada.publish([pistaLlamadaAudio]);
+    }
+    document.getElementById('estadoLlamada').textContent='📞 En llamada - Canal '+canal+' - UID '+miUidLlamada;
+  }catch(e){ alert('Error en llamada: '+e.message); }
+}
+async function colgarLlamada(){
+  try{
+    if(pistaLlamadaVideo){pistaLlamadaVideo.stop();pistaLlamadaVideo.close();pistaLlamadaVideo=null;}
+    if(pistaLlamadaAudio){pistaLlamadaAudio.stop();pistaLlamadaAudio.close();pistaLlamadaAudio=null;}
+    if(clienteLlamada){await clienteLlamada.leave();clienteLlamada=null;}
+  }catch(e){}
+  document.getElementById('llamadaBox').classList.remove('show'); document.getElementById('llamadaVideos').innerHTML='';
+  var miUid=localStorage.getItem('miUid'); if(miUid) await dbFirebase.ref('llamadas/'+miUid).remove();
+  if(chatActualOtroUid) await dbFirebase.ref('llamadas/'+chatActualOtroUid).remove();
+  notificacionActual=null;
+}
+async function toggleMicroLlamada(){ if(pistaLlamadaAudio){ var on=pistaLlamadaAudio.enabled; await pistaLlamadaAudio.setEnabled(!on); alert(on?'Micro apagado':'Micro prendido'); } }
+async function toggleCamaraLlamada(){ if(pistaLlamadaVideo){ var on=pistaLlamadaVideo.enabled; await pistaLlamadaVideo.setEnabled(!on); alert(on?'Camara apagada':'Camara prendida'); } }
+window.addEventListener('beforeunload', function(){ if(miCanalLiveActual&&miRolLive==='creador') dbFirebase.ref('lives/'+miCanalLiveActual).remove(); });
+</script>
+</body>
+</html>
