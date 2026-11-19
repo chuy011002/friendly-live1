@@ -474,6 +474,8 @@ async function abrirchat(otroUid, apodoOtro){
   document.querySelectorAll('.pantalla').forEach(function(p){ p.classList.remove('show') }); document.getElementById('pantallaChat').classList.add('show');
   escucharChat();
 }
+  function abrirChat(otroUid, apodoOtro){ return abrirchat(otroUid, apodoOtro); }
+function abrir_chat(otroUid, apodoOtro){ return abrirchat(otroUid, apodoOtro); }
 function escucharChat(){
   if(!chatActualId) return;
   dbFirebase.ref('chats/'+chatActualId+'/mensajes').off();
