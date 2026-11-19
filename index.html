@@ -442,7 +442,7 @@ authFirebase.onAuthStateChanged(async function(user) {
     document.getElementById('topNav').classList.remove('show');
   }
 });
-<script>
+</script>
 async function cargarPerfil() {
   var uid = localStorage.getItem('miUid') || (authFirebase.currentUser ? authFirebase.currentUser.uid : '');
   if (!uid) return;
