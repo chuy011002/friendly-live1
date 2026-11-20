@@ -671,13 +671,12 @@ async function cargarAmigos() {
 }
 
 function idChatCon(otroUid) {
-  var miUid = localStorage.getItem('miUid') || (authFirebase.currentUser ? authFirebase.currentUser.uid : '');
-  var a = String(miUid || '').toLowerCase();
-  var b = String(otroUid || '').toLowerCase();
+  var miUid = (authFirebase.currentUser ? authFirebase.currentUser.uid : '') || localStorage.getItem('miUid') || '';
+  var a = String(miUid || '');
+  var b = String(otroUid || '');
   if (!a || !b) return '';
   return a < b ? a + '_' + b : b + '_' + a;
 }
-
 async function abrirchat(otroUid, apodoOtro) {
   chatActualOtroUid = otroUid;
   chatActualOtroApodo = apodoOtro || '';
@@ -887,6 +886,9 @@ function verLiveDe(apodo) {
 
 async function unirmeComoCreador() {
   await salirDeLive();
+  // Limpia pistas viejas por si quedaron cerradas
+  pistaLocalVideo = null;
+  pistaLocalAudio = null;
   var apodo = localStorage.getItem('apodo') || 'chuy';
   var canal = obtenerCanal(apodo);
   var miUid = uidAgora(apodo);
@@ -901,17 +903,8 @@ async function unirmeComoCreador() {
         var tile = crearTile(user.uid, 'Invitado ' + user.uid);
         tile.innerHTML = '';
         user.videoTrack.play(tile);
-        var nom = document.createElement('div');
-        nom.className = 'nombre';
-        nom.textContent = 'Invitado ' + user.uid;
-        tile.appendChild(nom);
       }
       if (mediaType === 'audio') { user.audioTrack.play(); }
-      actualizarContadorLive();
-    });
-    clienteAgora.on('user-unpublished', function(user) {
-      var t = document.getElementById('tile-' + user.uid);
-      if (t) t.remove();
       actualizarContadorLive();
     });
     clienteAgora.on('user-left', function(user) {
@@ -921,15 +914,13 @@ async function unirmeComoCreador() {
     });
     await clienteAgora.setClientRole('host');
     await clienteAgora.join(APP_ID_AGORA, canal, token, miUid);
+    // Crear pistas NUEVAS despues de entrar, nunca reutilizar las viejas
     pistaLocalAudio = await AgoraRTC.createMicrophoneAudioTrack();
     pistaLocalVideo = await AgoraRTC.createCameraVideoTrack();
+    if (!pistaLocalAudio || !pistaLocalVideo) { alert('Dale permiso a camara y microfono'); return; }
     var tile = crearTile(miUid, apodo);
     tile.innerHTML = '';
     pistaLocalVideo.play(tile);
-    var nom2 = document.createElement('div');
-    nom2.className = 'nombre';
-    nom2.textContent = '@' + apodo + ' (Tu)';
-    tile.appendChild(nom2);
     await clienteAgora.publish([pistaLocalAudio, pistaLocalVideo]);
     estoyEnLive = true;
     miRolLive = 'creador';
@@ -939,7 +930,6 @@ async function unirmeComoCreador() {
     await dbFirebase.ref('lives/' + canal).set({ apodo: apodo, canal: canal, uid: miUid, fecha: Date.now(), activo: true });
   } catch (e) { alert('Error al transmitir: ' + e.message); document.getElementById('estadoCam').textContent = 'Error al transmitir'; }
 }
-
 async function unirmeComoEspectador(canalForzado, apodoForzado) {
   await salirDeLive();
   var canalDestino = canalForzado || obtenerCanal();
