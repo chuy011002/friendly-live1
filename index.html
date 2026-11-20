@@ -596,19 +596,28 @@ async function seguirUsuario(uidOtro, apodoOtro) {
 }
 
 function cargarLivesDemo() {
-  dbFirebase.ref('lives').off();
+  var cont = document.getElementById('listaLives');
+  if (cont) cont.innerHTML = '<p style="color:#aaa">Buscando lives...</p>';
+  try { dbFirebase.ref('lives').off(); } catch(e) {}
   dbFirebase.ref('lives').on('value', function(snap) {
+    var cont2 = document.getElementById('listaLives');
+    if (!cont2) return;
+    var datos = snap.val();
+    if (!datos) {
+      cont2.innerHTML = '<p style="color:#aaa">Nadie esta en vivo ahorita. Pidele a Chuy que le pique a TRANSMITIR y no se salga.</p>';
+      return;
+    }
     var html = '';
-    snap.forEach(function(c) {
-      var l = c.val();
-      if (l && l.activo) {
-        html += '<div class="card"><b>🔴 Live de @' + escaparHTML(l.apodo || '') + '</b><p style="color:#aaa;font-size:13px">Canal: ' + escaparHTML(l.canal || '') + '</p><button class="btn-rojo" onclick="verLiveDe(\'' + escaparHTML(l.apodo || '') + '\')">Ver live</button></div>';
-      }
+    Object.keys(datos).forEach(function(k) {
+      var l = datos[k];
+      if (!l) return;
+      var apodo = l.apodo || k.replace('live_', '');
+      html += '<div class="card"><b>🔴 Live de @' + escaparHTML(apodo) + '</b><p style="color:#aaa;font-size:13px">Canal: ' + escaparHTML(l.canal || k) + '</p><button class="btn-rojo" onclick="verLiveDe(\'' + escaparHTML(apodo) + '\')">Ver live</button></div>';
     });
-    document.getElementById('listaLives').innerHTML = html || '<p style="color:#aaa">Nadie en vivo ahora. Se el primero en transmitir!</p>';
+    if (!html) html = '<p style="color:#aaa">Nadie en vivo ahora. Se el primero en transmitir!</p>';
+    cont2.innerHTML = html;
   });
 }
-
 async function buscarAmigo() {
   var q = limpiarBusqueda(document.getElementById('inputBuscarAmigo').value.trim());
   if (!q) return;
@@ -884,52 +893,7 @@ function verLiveDe(apodo) {
   unirmeComoEspectador(obtenerCanalDe(apodo), apodo);
 }
 
-async function unirmeComoCreador() {
-  await salirDeLive();
-  // Limpia pistas viejas por si quedaron cerradas
-  pistaLocalVideo = null;
-  pistaLocalAudio = null;
-  var apodo = localStorage.getItem('apodo') || 'chuy';
-  var canal = obtenerCanal(apodo);
-  var miUid = uidAgora(apodo);
-  miCanalLiveActual = canal;
-  document.getElementById('estadoCam').textContent = 'Conectando a tu live ' + canal + '...';
-  try {
-    var token = await obtenerToken(canal, miUid);
-    clienteAgora = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
-    clienteAgora.on('user-published', async function(user, mediaType) {
-      await clienteAgora.subscribe(user, mediaType);
-      if (mediaType === 'video') {
-        var tile = crearTile(user.uid, 'Invitado ' + user.uid);
-        tile.innerHTML = '';
-        user.videoTrack.play(tile);
-      }
-      if (mediaType === 'audio') { user.audioTrack.play(); }
-      actualizarContadorLive();
-    });
-    clienteAgora.on('user-left', function(user) {
-      var t = document.getElementById('tile-' + user.uid);
-      if (t) t.remove();
-      actualizarContadorLive();
-    });
-    await clienteAgora.setClientRole('host');
-    await clienteAgora.join(APP_ID_AGORA, canal, token, miUid);
-    // Crear pistas NUEVAS despues de entrar, nunca reutilizar las viejas
-    pistaLocalAudio = await AgoraRTC.createMicrophoneAudioTrack();
-    pistaLocalVideo = await AgoraRTC.createCameraVideoTrack();
-    if (!pistaLocalAudio || !pistaLocalVideo) { alert('Dale permiso a camara y microfono'); return; }
-    var tile = crearTile(miUid, apodo);
-    tile.innerHTML = '';
-    pistaLocalVideo.play(tile);
-    await clienteAgora.publish([pistaLocalAudio, pistaLocalVideo]);
-    estoyEnLive = true;
-    miRolLive = 'creador';
-    document.getElementById('estadoCam').textContent = '🔴 EN VIVO como @' + apodo + ' - Canal ' + canal;
-    escucharComentariosLive(canal);
-    actualizarContadorLive();
-    await dbFirebase.ref('lives/' + canal).set({ apodo: apodo, canal: canal, uid: miUid, fecha: Date.now(), activo: true });
-  } catch (e) { alert('Error al transmitir: ' + e.message); document.getElementById('estadoCam').textContent = 'Error al transmitir'; }
-}
+
 async function unirmeComoEspectador(canalForzado, apodoForzado) {
   await salirDeLive();
   var canalDestino = canalForzado || obtenerCanal();
