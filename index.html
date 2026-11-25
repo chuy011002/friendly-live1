@@ -547,6 +547,7 @@ async function darLike(postId) {
   ref.transaction(function(cur){ return (cur || 0) + 1; });
   setTimeout(cargarFeed, 300);
 }
+</script>
 <script>
 async function borrarPost(postId) {
   if (!confirm('¿Borrar esta publicacion?')) return;
@@ -802,6 +803,7 @@ function copiarLink() {
 function cerrarCompartir() {
   document.getElementById('shareModal').classList.remove('show');
 }
+</script>
 <script>
 function abrirFotoGrande(src) {
   document.getElementById('imgFotoGrande').src = src;
