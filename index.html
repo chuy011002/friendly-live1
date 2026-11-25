@@ -43,10 +43,12 @@ function canalLlamada(chatId) {
   return 'call_' + (h % 100000000);
 }
 async function obtenerToken(canal, uid) {
-  var r = await fetch('/api/token?channel=' + encodeURIComponent(canal) + '&uid=' + uid);
-  var d = await r.json();
-  if (!d.token) throw new Error('No se pudo generar token');
-  return d.token;
+  try {
+    var r = await fetch('/api/token?channel=' + encodeURIComponent(canal) + '&uid=' + uid);
+    var d = await r.json();
+    if (d && d.token) return d.token;
+  } catch (e) { console.log('Sin servidor token, uso null', e); }
+  return null;
 }
 function limpiarApodo(s) {
   return (s || '').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
@@ -173,6 +175,7 @@ textarea { resize: vertical; min-height: 70px; }
 </div>
 </div>
 </div>
+
 <div id="modalPolitica" class="modal-politica"><div style="background:#1c1c22;border-radius:14px;padding:16px;max-width:500px;margin:20px auto"><h2>Politica de Privacidad - Friendly Live</h2><p style="font-size:13px;line-height:1.6;color:#ccc;margin:10px 0">1. Solo mayores de 18 anos. Guardamos nombre, apodo, correo, edad y pais solo para tu cuenta.<br>2. No desnudos, violencia, acoso ni contenido ilegal. Eres responsable de lo que transmites.<br>3. No compartimos tus datos con terceros. Puedes borrar tu cuenta y tus publicaciones desde Ajustes.<br>4. Al crear tu cuenta aceptas esta politica.</p><button type="button" class="btn-rojo" onclick="document.getElementById('modalPolitica').classList.remove('show')">Cerrar</button></div></div>
 
 <div id="topNav" class="topnav">
@@ -291,7 +294,6 @@ textarea { resize: vertical; min-height: 70px; }
 </div>
 <button type="button" class="btn-gris" style="margin-top:10px" onclick="document.getElementById('modalComprar').classList.remove('show')">Cerrar</button>
 </div>
-
 <div id="modalFoto" class="modal-foto">
 <img id="imgFotoGrande" src="">
 <button type="button" class="btn-rojo cerrar" onclick="document.getElementById('modalFoto').classList.remove('show')">Cerrar</button>
@@ -331,7 +333,6 @@ function mostrar(nombre) {
   if (nombre === 'vivo') actualizarInfoLive();
   if (nombre === 'lives') cargarLivesDemo();
 }
-
 function cambiarTab(tipo) {
   var esCrear = tipo === 'crear';
   document.getElementById('camposCrear').style.display = esCrear ? 'block' : 'none';
@@ -340,7 +341,6 @@ function cambiarTab(tipo) {
   document.getElementById('btnTabCrear').className = esCrear ? 'btn-rojo' : 'btn-gris';
   document.getElementById('btnTabEntrar').className = esCrear ? 'btn-gris' : 'btn-rojo';
 }
-
 function actualizarInfoLive() {
   var apodo = localStorage.getItem('apodo') || 'chuy';
   var el = document.getElementById('apodoLive');
@@ -350,7 +350,6 @@ function actualizarInfoLive() {
   var vacia = document.getElementById('fotoPerfilLiveVacia');
   if (foto && img) { img.src = foto; img.style.display = 'block'; if (vacia) vacia.style.display = 'none'; }
 }
-
 async function crearCuenta() {
   try {
     var nombre = document.getElementById('inputNombre').value.trim();
@@ -376,7 +375,6 @@ async function crearCuenta() {
     cambiarTab('entrar');
   } catch (e) { alert('Error: ' + e.message); }
 }
-
 async function entrarCuenta() {
   try {
     var correo = document.getElementById('inputCorreoLogin').value.trim();
@@ -396,17 +394,14 @@ async function entrarCuenta() {
     escucharNotificaciones(uid);
   } catch (e) { alert('Error al entrar: ' + e.message); }
 }
-
 function olvidarPass() {
   var correo = document.getElementById('inputCorreoLogin').value.trim();
   if (!correo) return alert('Escribe tu correo primero');
   authFirebase.sendPasswordResetEmail(correo).then(function(){ alert('Te mandamos el codigo a tu correo'); }).catch(function(e){ alert(e.message); });
 }
-
 function cerrarSesion() {
   authFirebase.signOut().then(function(){ localStorage.removeItem('apodo'); localStorage.removeItem('miUid'); location.reload(); });
 }
-
 async function borrarCuenta() {
   if (!confirm('¿Seguro que quieres borrar tu cuenta y todo?')) return;
   try {
@@ -421,7 +416,6 @@ async function borrarCuenta() {
     location.reload();
   } catch (e) { alert('Vuelve a entrar y vuelve a intentar borrar: ' + e.message); }
 }
-
 authFirebase.onAuthStateChanged(async function(user) {
   if (user) {
     miUidFirebase = user.uid;
@@ -443,7 +437,7 @@ authFirebase.onAuthStateChanged(async function(user) {
   }
 });
 </script>
-  <script>
+<script>
 async function cargarPerfil() {
   var uid = localStorage.getItem('miUid') || (authFirebase.currentUser ? authFirebase.currentUser.uid : '');
   if (!uid) return;
@@ -471,7 +465,6 @@ async function cargarPerfil() {
   var snapSeg2 = await dbFirebase.ref('seguidos/' + uid).once('value');
   document.getElementById('statSeguidos').textContent = snapSeg2.numChildren();
 }
-
 async function guardarPerfil() {
   var uid = localStorage.getItem('miUid');
   if (!uid) return alert('Entra primero');
@@ -494,7 +487,6 @@ async function guardarPerfil() {
   cargarPerfil();
   actualizarInfoLive();
 }
-
 document.getElementById('inputFotoPerfil').addEventListener('change', async function(e) {
   var file = e.target.files[0];
   if (!file) return;
@@ -510,11 +502,9 @@ document.getElementById('inputFotoPerfil').addEventListener('change', async func
   };
   reader.readAsDataURL(file);
 });
-
 document.getElementById('inputArchivoPost').addEventListener('change', function(e) {
   if (e.target.files[0]) document.getElementById('nombreArchivoPost').textContent = 'Archivo: ' + e.target.files[0].name;
 });
-
 async function publicarPost() {
   var uid = localStorage.getItem('miUid');
   if (!uid) return alert('Entra primero');
@@ -533,7 +523,6 @@ async function publicarPost() {
   }
   if (file) { var r = new FileReader(); r.onload = function(){ guardar(r.result); }; r.readAsDataURL(file); } else guardar('');
 }
-
 async function cargarFeed() {
   var snap = await dbFirebase.ref('posts').orderByChild('fecha').limitToLast(30).once('value');
   var arr = [];
@@ -553,20 +542,18 @@ async function cargarFeed() {
   });
   document.getElementById('bannerLiveInicio').innerHTML = livesHtml;
 }
-
 async function darLike(postId) {
   var ref = dbFirebase.ref('posts/' + postId + '/likes');
   ref.transaction(function(cur){ return (cur || 0) + 1; });
   setTimeout(cargarFeed, 300);
 }
-
+<script>
 async function borrarPost(postId) {
   if (!confirm('¿Borrar esta publicacion?')) return;
   await dbFirebase.ref('posts/' + postId).remove();
   cargarFeed();
   cargarPerfil();
 }
-
 async function buscarEnInicio() {
   var q = limpiarBusqueda(document.getElementById('inputBuscar').value);
   if (!q) return cargarFeed();
@@ -586,7 +573,6 @@ async function buscarEnInicio() {
     document.getElementById('buscarResultados').innerHTML = html || '<p style="color:#aaa">Sin resultados para ' + escaparHTML(q) + '</p>';
   } catch (e) { document.getElementById('buscarResultados').innerHTML = '<p style="color:#ff3b5c">Error: ' + e.message + '</p>'; }
 }
-
 async function seguirUsuario(uidOtro, apodoOtro) {
   var miUid = localStorage.getItem('miUid');
   if (!miUid) return alert('Entra primero');
@@ -594,28 +580,17 @@ async function seguirUsuario(uidOtro, apodoOtro) {
   await dbFirebase.ref('seguidos/' + miUid + '/' + uidOtro).set(true);
   alert('Ahora sigues a @' + apodoOtro);
 }
-
 function cargarLivesDemo() {
-  var cont = document.getElementById('listaLives');
-  if (cont) cont.innerHTML = '<p style="color:#aaa">Buscando lives...</p>';
-  try { dbFirebase.ref('lives').off(); } catch(e) {}
+  dbFirebase.ref('lives').off();
   dbFirebase.ref('lives').on('value', function(snap) {
-    var cont2 = document.getElementById('listaLives');
-    if (!cont2) return;
-    var datos = snap.val();
-    if (!datos) {
-      cont2.innerHTML = '<p style="color:#aaa">Nadie esta en vivo ahorita. Pidele a Chuy que le pique a TRANSMITIR y no se salga.</p>';
-      return;
-    }
     var html = '';
-    Object.keys(datos).forEach(function(k) {
-      var l = datos[k];
-      if (!l) return;
-      var apodo = l.apodo || k.replace('live_', '');
-      html += '<div class="card"><b>🔴 Live de @' + escaparHTML(apodo) + '</b><p style="color:#aaa;font-size:13px">Canal: ' + escaparHTML(l.canal || k) + '</p><button class="btn-rojo" onclick="verLiveDe(\'' + escaparHTML(apodo) + '\')">Ver live</button></div>';
+    snap.forEach(function(c) {
+      var l = c.val();
+      if (l && l.activo) {
+        html += '<div class="card"><b>🔴 Live de @' + escaparHTML(l.apodo || '') + '</b><p style="color:#aaa;font-size:13px">Canal: ' + escaparHTML(l.canal || '') + '</p><button class="btn-rojo" onclick="verLiveDe(\'' + escaparHTML(l.apodo || '') + '\')">Ver live</button></div>';
+      }
     });
-    if (!html) html = '<p style="color:#aaa">Nadie en vivo ahora. Se el primero en transmitir!</p>';
-    cont2.innerHTML = html;
+    document.getElementById('listaLives').innerHTML = html || '<p style="color:#aaa">Nadie en vivo ahora. Se el primero en transmitir!</p>';
   });
 }
 async function buscarAmigo() {
@@ -639,7 +614,6 @@ async function buscarAmigo() {
     cont.innerHTML = html || '<p style="color:#aaa">No encontré a @' + escaparHTML(q) + '</p>';
   } catch (e) { cont.innerHTML = '<p style="color:#ff3b5c">Error: ' + e.message + '</p>'; }
 }
-
 async function cargarAmigos() {
   var user = authFirebase.currentUser;
   var miUid = user ? user.uid : localStorage.getItem('miUid');
@@ -678,7 +652,6 @@ async function cargarAmigos() {
   await Promise.all(prom2);
   document.getElementById('listaSeguidores').innerHTML = html2 || '<p style="color:#aaa">Nadie te sigue aun</p>';
 }
-
 function idChatCon(otroUid) {
   var miUid = (authFirebase.currentUser ? authFirebase.currentUser.uid : '') || localStorage.getItem('miUid') || '';
   var a = String(miUid || '');
@@ -702,10 +675,8 @@ async function abrirchat(otroUid, apodoOtro) {
   document.getElementById('pantallaChat').classList.add('show');
   escucharChat();
 }
-
 function abrirChat(otroUid, apodoOtro) { return abrirchat(otroUid, apodoOtro); }
 function abrir_chat(otroUid, apodoOtro) { return abrirchat(otroUid, apodoOtro); }
-
 function escucharChat() {
   if (!chatActualId) return;
   dbFirebase.ref('chats/' + chatActualId + '/mensajes').off();
@@ -721,7 +692,6 @@ function escucharChat() {
     document.getElementById('chatBox').scrollTop = document.getElementById('chatBox').scrollHeight;
   });
 }
-
 async function enviarMensajeChat() {
   var texto = document.getElementById('inputMensajeChat').value.trim();
   if (!texto || !chatActualId || !chatActualOtroUid) return;
@@ -731,7 +701,6 @@ async function enviarMensajeChat() {
   document.getElementById('inputMensajeChat').value = '';
   await dbFirebase.ref('notis/' + chatActualOtroUid).push({ texto: '💬 @' + miApodo + ': ' + texto, deUid: miUid, deApodo: miApodo, chatId: chatActualId, tipo: 'mensaje', fecha: Date.now() });
 }
-
 document.getElementById('inputFotoChat').addEventListener('change', function(e) {
   var file = e.target.files[0];
   if (!file || !chatActualId) return;
@@ -743,7 +712,7 @@ document.getElementById('inputFotoChat').addEventListener('change', function(e) 
   r.readAsDataURL(file);
 });
 </script>
-  <script>
+<script>
 function escucharNotificaciones(miUid) {
   dbFirebase.ref('llamadas/' + miUid).off();
   dbFirebase.ref('llamadas/' + miUid).on('value', function(snap) {
@@ -768,12 +737,10 @@ function escucharNotificaciones(miUid) {
     mostrarBanner(n.texto || 'Nueva notificacion', n.chatId, n.deUid, n.deApodo);
   });
 }
-
 function irANotificacion() {
   document.getElementById('bannerNoti').style.display = 'none';
   if (notificacionActual && notificacionActual.chatId) abrirChat(notificacionActual.deUid, notificacionActual.deApodo);
 }
-
 async function enviarComentario() {
   var texto = document.getElementById('inputComentario').value.trim();
   if (!texto) return;
@@ -782,7 +749,6 @@ async function enviarComentario() {
   await dbFirebase.ref('comentarios_live/' + canal).push({ apodo: apodo, texto: texto, fecha: Date.now() });
   document.getElementById('inputComentario').value = '';
 }
-
 function escucharComentariosLive(canal) {
   dbFirebase.ref('comentarios_live/' + canal).off();
   dbFirebase.ref('comentarios_live/' + canal).limitToLast(20).on('value', function(snap) {
@@ -794,11 +760,9 @@ function escucharComentariosLive(canal) {
     document.getElementById('listaComentarios').innerHTML = html;
   });
 }
-
 function toggleRegalos() {
   document.getElementById('giftPanel').classList.toggle('show');
 }
-
 async function enviarRegalo(nombre, costo) {
   var uid = localStorage.getItem('miUid');
   if (!uid) return alert('Entra primero');
@@ -812,11 +776,9 @@ async function enviarRegalo(nombre, costo) {
   alert('Mandaste ' + nombre + '!');
   toggleRegalos();
 }
-
 function abrirComprarMonedas() {
   document.getElementById('modalComprar').classList.add('show');
 }
-
 async function comprarMonedas(cant) {
   var uid = localStorage.getItem('miUid');
   if (!uid) return;
@@ -826,29 +788,25 @@ async function comprarMonedas(cant) {
   alert('Recargaste ' + cant + ' monedas (demo)');
   document.getElementById('modalComprar').classList.remove('show');
 }
-
 function abrirCompartir() {
   var canal = miCanalLiveActual || obtenerCanal();
   document.getElementById('inputLinkCompartir').value = location.origin + location.pathname + '?live=' + canal;
   document.getElementById('shareModal').classList.add('show');
 }
-
 function copiarLink() {
   var i = document.getElementById('inputLinkCompartir');
   i.select();
   document.execCommand('copy');
   alert('Link copiado!');
 }
-
 function cerrarCompartir() {
   document.getElementById('shareModal').classList.remove('show');
 }
-
+<script>
 function abrirFotoGrande(src) {
   document.getElementById('imgFotoGrande').src = src;
   document.getElementById('modalFoto').classList.add('show');
 }
-
 function crearTile(uid, nombre) {
   var grid = document.getElementById('videoPrincipal');
   var viejo = document.getElementById('tile-' + uid);
@@ -862,13 +820,11 @@ function crearTile(uid, nombre) {
   tiles.forEach(function(t){ t.classList.toggle('solo', tiles.length === 1); });
   return div;
 }
-
 function actualizarContadorLive() {
   var grid = document.getElementById('videoPrincipal');
   var n = grid.querySelectorAll('.tile').length;
   document.getElementById('contadorLive').textContent = 'En vivo: ' + (n || 1) + ' persona' + (n === 1 ? '' : 's');
 }
-
 async function salirDeLive() {
   try {
     if (pistaLocalVideo) { pistaLocalVideo.stop(); pistaLocalVideo.close(); pistaLocalVideo = null; }
@@ -887,13 +843,56 @@ async function salirDeLive() {
   miCanalLiveActual = '';
   actualizarContadorLive();
 }
-
 function verLiveDe(apodo) {
   mostrar('vivo');
   unirmeComoEspectador(obtenerCanalDe(apodo), apodo);
 }
 
-
+// *** ESTA ES LA FUNCION QUE FALTABA - YA AGREGADA ***
+async function unirmeComoCreador() {
+  await salirDeLive();
+  var canalDestino = obtenerCanal();
+  var apodo = localStorage.getItem('apodo') || 'yo';
+  var miUid = uidAgora(apodo);
+  miCanalLiveActual = canalDestino;
+  miRolLive = 'creador';
+  document.getElementById('estadoCam').textContent = 'Prendiendo camara en ' + canalDestino + '...';
+  try {
+    var token = await obtenerToken(canalDestino, miUid);
+    clienteAgora = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
+    clienteAgora.on('user-published', async function(user, mediaType) {
+      await clienteAgora.subscribe(user, mediaType);
+      if (mediaType === 'video') {
+        var tile = crearTile(user.uid, 'Invitado');
+        tile.innerHTML = '';
+        user.videoTrack.play(tile);
+      }
+      if (mediaType === 'audio') { user.audioTrack.play(); }
+      actualizarContadorLive();
+    });
+    clienteAgora.on('user-unpublished', function(user) {
+      var t = document.getElementById('tile-' + user.uid);
+      if (t) t.remove();
+      actualizarContadorLive();
+    });
+    await clienteAgora.setClientRole('host');
+    await clienteAgora.join(APP_ID_AGORA, canalDestino, token, miUid);
+    pistaLocalAudio = await AgoraRTC.createMicrophoneAudioTrack();
+    pistaLocalVideo = await AgoraRTC.createCameraVideoTrack();
+    var tile = crearTile(miUid, apodo);
+    tile.innerHTML = '';
+    pistaLocalVideo.play(tile);
+    await clienteAgora.publish([pistaLocalAudio, pistaLocalVideo]);
+    await dbFirebase.ref('lives/' + canalDestino).set({ apodo: apodo, canal: canalDestino, activo: true, fecha: Date.now() });
+    estoyEnLive = true;
+    document.getElementById('estadoCam').textContent = '🔴 EN VIVO en ' + canalDestino;
+    escucharComentariosLive(canalDestino);
+    actualizarContadorLive();
+  } catch (e) {
+    console.log(e);
+    alert('Error al transmitir: ' + e.message);
+  }
+}
 async function unirmeComoEspectador(canalForzado, apodoForzado) {
   await salirDeLive();
   var canalDestino = canalForzado || obtenerCanal();
@@ -937,7 +936,6 @@ async function unirmeComoEspectador(canalForzado, apodoForzado) {
     actualizarContadorLive();
   } catch (e) { alert('Error al ver live: ' + e.message); }
 }
-
 async function unirmeComoInvitadoCamara() {
   var canalDestino = miCanalLiveActual || obtenerCanal();
   var apodo = localStorage.getItem('apodo') || 'yo';
@@ -968,7 +966,6 @@ async function unirmeComoInvitadoCamara() {
     actualizarContadorLive();
   } catch (e) { alert('Error camara: ' + e.message); }
 }
-
 async function unirmeComoInvitadoAudio() {
   var canalDestino = miCanalLiveActual || obtenerCanal();
   var apodo = localStorage.getItem('apodo') || 'yo';
@@ -997,10 +994,8 @@ async function unirmeComoInvitadoAudio() {
     actualizarContadorLive();
   } catch (e) { alert('Error microfono: ' + e.message); }
 }
-
 async function iniciarLlamadaVideo() { iniciarLlamada('video'); }
 async function iniciarLlamadaAudio() { iniciarLlamada('audio'); }
-
 async function iniciarLlamada(tipo) {
   if (!chatActualId || !chatActualOtroUid) return alert('Abre un chat primero');
   var miUid = localStorage.getItem('miUid') || '';
@@ -1010,7 +1005,6 @@ async function iniciarLlamada(tipo) {
   await dbFirebase.ref('notis/' + chatActualOtroUid).push({ texto: '📞 Llamada de @' + miApodo, deUid: miUid, deApodo: miApodo, chatId: chatActualId, tipo: 'llamada', fecha: Date.now() });
   await entrarALlamada(canal, tipo, true);
 }
-
 async function aceptarLlamada() {
   var d = notificacionActual;
   if (!d) return;
@@ -1023,7 +1017,6 @@ async function aceptarLlamada() {
   document.getElementById('pantallaChat').classList.add('show');
   escucharChat();
 }
-
 async function rechazarLlamada() {
   var d = notificacionActual;
   document.getElementById('modalLlamada').classList.remove('show');
@@ -1034,7 +1027,6 @@ async function rechazarLlamada() {
   }
   notificacionActual = null;
 }
-
 async function entrarALlamada(canal, tipo, soyQuienLlama) {
   var apodo = localStorage.getItem('apodo') || 'anon';
   var miUidLlamada = uidAgora(apodo);
@@ -1082,7 +1074,6 @@ async function entrarALlamada(canal, tipo, soyQuienLlama) {
     document.getElementById('estadoLlamada').textContent = '📞 En llamada - Canal ' + canal;
   } catch (e) { alert('Error en llamada: ' + e.message); }
 }
-
 async function colgarLlamada() {
   try {
     if (pistaLlamadaVideo) { pistaLlamadaVideo.stop(); pistaLlamadaVideo.close(); pistaLlamadaVideo = null; }
@@ -1096,7 +1087,6 @@ async function colgarLlamada() {
   if (chatActualOtroUid) await dbFirebase.ref('llamadas/' + chatActualOtroUid).remove();
   notificacionActual = null;
 }
-
 async function toggleMicroLlamada() {
   if (pistaLlamadaAudio) {
     var on = pistaLlamadaAudio.enabled;
@@ -1104,7 +1094,6 @@ async function toggleMicroLlamada() {
     alert(on ? 'Micro apagado' : 'Micro prendido');
   }
 }
-
 async function toggleCamaraLlamada() {
   if (pistaLlamadaVideo) {
     var on = pistaLlamadaVideo.enabled;
@@ -1112,7 +1101,6 @@ async function toggleCamaraLlamada() {
     alert(on ? 'Camara apagada' : 'Camara prendida');
   }
 }
-
 window.addEventListener('beforeunload', function() {
   if (miCanalLiveActual && miRolLive === 'creador') dbFirebase.ref('lives/' + miCanalLiveActual).remove();
 });
