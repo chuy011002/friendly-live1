@@ -548,7 +548,6 @@ async function darLike(postId) {
   ref.transaction(function(cur){ return (cur || 0) + 1; });
   setTimeout(cargarFeed, 300);
 }
-<script>
 async function borrarPost(postId) {
   if (!confirm('¿Borrar esta publicacion?')) return;
   await dbFirebase.ref('posts/' + postId).remove();
@@ -742,8 +741,6 @@ document.getElementById('inputFotoChat').addEventListener('change', function(e) 
   };
   r.readAsDataURL(file);
 });
-</script>
-<script>
 function escucharNotificaciones(miUid) {
   dbFirebase.ref('llamadas/' + miUid).off();
   dbFirebase.ref('llamadas/' + miUid).on('value', function(snap) {
