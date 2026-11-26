@@ -362,11 +362,12 @@ async function crearCuenta() {
     if (!document.getElementById('checkTerminos').checked) return alert('Acepta la Politica de Privacidad');
     if (edad < 18) return alert('Debes ser mayor de 18');
     if (pass.length < 6) return alert('Contrasena minimo 6 letras');
+    apodo = apodo.replace(/^@+/, '').trim().toLowerCase();
     var existe = await dbFirebase.ref('apodos/' + apodo).once('value');
-    if (existe.val()) return alert('Ese apodo ya existe, elige otro');
+    if (existe.val()) return alert('Ese apodo ya existe, elige otro')
     var cred = await authFirebase.createUserWithEmailAndPassword(correo, pass);
     var uid = cred.user.uid;
-    var datos = { nombre: nombre, apodo: apodo, correo: correo, edad: edad, pais: pais, foto: '', bio: '', monedas: 500, creado: Date.now() };
+    var datos = { uid: uid, nombre: nombre, apodo: apodo, correo: correo, edad: edad, pais: pais, foto: '', bio: '', monedas: 500, creado: Date.now() };
     await dbFirebase.ref('usuarios/' + uid).set(datos);
     await dbFirebase.ref('apodos/' + apodo).set(uid);
     localStorage.setItem('apodo', apodo);
@@ -547,7 +548,6 @@ async function darLike(postId) {
   ref.transaction(function(cur){ return (cur || 0) + 1; });
   setTimeout(cargarFeed, 300);
 }
-</script>
 <script>
 async function borrarPost(postId) {
   if (!confirm('¿Borrar esta publicacion?')) return;
@@ -558,21 +558,51 @@ async function borrarPost(postId) {
 async function buscarEnInicio() {
   var q = limpiarBusqueda(document.getElementById('inputBuscar').value);
   if (!q) return cargarFeed();
+
   try {
     var snap = await dbFirebase.ref('usuarios').once('value');
     var miUid = localStorage.getItem('miUid') || '';
-    var html = '';
+    
+    // La fuente de verdad: 1 usuario por apodo normalizado
+    // No por llave de Firebase, porque esas llaves están sucias con push()
+    var vistos = new Map();
+
     snap.forEach(function(c) {
       var u = c.val() || {};
-      if (c.key === miUid) return;
-      var ap = limpiarBusqueda(u.apodo || '');
-      var nom = limpiarBusqueda(u.nombre || '');
-      if (ap.includes(q) || nom.includes(q)) {
-        html += '<div class="friend" onclick="abrirChat(\'' + c.key + '\',\'' + escaparHTML(u.apodo || '') + '\')"><div style="width:44px;height:44px;border-radius:50%;background:#444;display:flex;align-items:center;justify-content:center">👤</div><div><b>@' + escaparHTML(u.apodo || '') + '</b><div style="font-size:12px;color:#aaa">' + escaparHTML(u.nombre || '') + '</div></div><button class="btn-gris" style="width:auto">Chat</button></div>';
-      }
+      // Si el usuario no tiene uid guardado, usamos la llave
+      var uid = u.uid || c.key;
+      if (uid === miUid) return;
+
+      // Normalizar DE VERDAD: sin @, sin espacios, en minúsculas
+      // Así " @Chuy ", "@chuy" y "chuy" son el mismo
+      var apodoLimpio = String(u.apodo || '').replace(/^@+/, '').trim();
+      var nombreLimpio = String(u.nombre || '').trim();
+      if (!apodoLimpio) return;
+
+      var clave = apodoLimpio.toLowerCase();
+      // Si ya vimos este apodo, no lo volvemos a agregar
+      // Nos quedamos con el primero, que es el original
+      if (vistos.has(clave)) return;
+      vistos.set(clave, { uid: uid, apodo: apodoLimpio, nombre: nombreLimpio });
     });
+
+    var html = '';
+    vistos.forEach(function(u) {
+      var ap = limpiarBusqueda(u.apodo);
+      var nom = limpiarBusqueda(u.nombre);
+      if (!ap.includes(q) && !nom.includes(q)) return;
+
+      // El @ SOLO se pone aquí al mostrar, nunca se guarda
+      html += '<div class="friend" onclick="abrirChat(\'' + u.uid + '\',\'' + escaparHTML(u.apodo) + '\')">'
+        + '<div style="width:44px;height:44px;border-radius:50%;background:#444;display:flex;align-items:center;justify-content:center">👤</div>'
+        + '<div><b>@' + escaparHTML(u.apodo) + '</b><div style="font-size:12px;color:#aaa">' + escaparHTML(u.nombre) + '</div></div>'
+        + '</div><button class="btn-gris" style="width:auto">Chat</button></div>';
+    });
+
     document.getElementById('buscarResultados').innerHTML = html || '<p style="color:#aaa">Sin resultados para ' + escaparHTML(q) + '</p>';
-  } catch (e) { document.getElementById('buscarResultados').innerHTML = '<p style="color:#ff3b5c">Error: ' + e.message + '</p>'; }
+  } catch (e) {
+    console.log('Error buscar', e);
+  }
 }
 async function seguirUsuario(uidOtro, apodoOtro) {
   var miUid = localStorage.getItem('miUid');
@@ -803,7 +833,6 @@ function copiarLink() {
 function cerrarCompartir() {
   document.getElementById('shareModal').classList.remove('show');
 }
-</script>
 <script>
 function abrirFotoGrande(src) {
   document.getElementById('imgFotoGrande').src = src;
